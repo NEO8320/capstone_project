@@ -1,0 +1,30 @@
+/*
+ * Feed 레이아웃 스타일
+ */
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+.feed__section {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 재시도 버튼 */
+.btn-retry {
+  margin-top: var(--spacing-md);
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-link);
+  color: #fff;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.btn-retry:hover {
+  opacity: 0.9;
+}

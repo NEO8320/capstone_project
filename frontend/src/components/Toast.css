@@ -1,0 +1,65 @@
+/*
+ * Toast 스타일 — 하단 고정, 5초 프로그레스 바
+ */
+
+.toast {
+  position: fixed;
+  bottom: var(--spacing-lg);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  min-width: 300px;
+  max-width: 500px;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  border-radius: var(--card-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  overflow: hidden;
+  animation: toast-slide-up 0.3s ease;
+}
+
+@keyframes toast-slide-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.toast__message {
+  flex: 1;
+  font-size: calc(14px * var(--font-size-multiplier));
+}
+
+.toast__undo {
+  flex-shrink: 0;
+  padding: 6px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  color: #60a5fa;
+  font-size: calc(14px * var(--font-size-multiplier));
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.toast__undo:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 프로그레스 바 (하단) */
+.toast__progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: #60a5fa;
+  transition: width 0.05s linear;
+}

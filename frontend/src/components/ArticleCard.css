@@ -1,0 +1,172 @@
+/*
+ * ArticleCard 스타일
+ * ==================
+ *
+ * - 카드 레이아웃: 둥근 모서리 + 그림자 + hover 효과
+ * - 신뢰도 배지: 우측 상단 고정, 3단계 색상
+ * - 반응형: 모바일에서 패딩/폰트 축소
+ * - --font-size-multiplier 연동: 모든 텍스트 크기가 설정에 따라 일괄 변동
+ */
+
+.article-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.article-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+/* ── 신뢰도 배지 (우측 상단) ── */
+.article-card__badge {
+  position: absolute;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: calc(12px * var(--font-size-multiplier));
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* 90점 이상: 초록색 배지 */
+.badge--green {
+  color: var(--badge-green);
+  background: var(--badge-green-bg);
+}
+
+/* 70~89점: 노란색 배지 */
+.badge--yellow {
+  color: var(--badge-yellow);
+  background: var(--badge-yellow-bg);
+}
+
+/* 69점 이하: 빨간색 배지 */
+.badge--red {
+  color: var(--badge-red);
+  background: var(--badge-red-bg);
+}
+
+/* ── 구독 태그 ── */
+.article-card__subscribed {
+  position: absolute;
+  top: var(--spacing-md);
+  left: var(--spacing-md);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: calc(11px * var(--font-size-multiplier));
+  font-weight: 600;
+  color: var(--color-link);
+  background: #e8f0fe;
+}
+
+/* ── 카테고리 태그 ── */
+.article-card__category {
+  display: inline-block;
+  width: fit-content;
+  margin-top: var(--spacing-sm);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: calc(12px * var(--font-size-multiplier));
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+}
+
+/* ── 제목 ── */
+.article-card__title {
+  font-size: calc(18px * var(--font-size-multiplier));
+  font-weight: 600;
+  line-height: 1.4;
+  margin-top: var(--spacing-xs);
+  /* 배지와 겹치지 않도록 우측 여백 */
+  padding-right: 60px;
+}
+
+.article-card__title a {
+  color: var(--color-text-primary);
+}
+
+.article-card__title a:hover {
+  color: var(--color-link);
+}
+
+/* ── 요약 ── */
+.article-card__summary {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  /* 3줄 제한 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── 메타 정보 ── */
+.article-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  margin-top: auto;
+  padding-top: var(--spacing-sm);
+  font-size: calc(13px * var(--font-size-multiplier));
+  color: var(--color-text-secondary);
+}
+
+.article-card__press {
+  font-weight: 600;
+}
+
+.article-card__journalist::before {
+  content: '|';
+  margin-right: var(--spacing-sm);
+  color: var(--color-border);
+}
+
+.article-card__time {
+  margin-left: auto;
+}
+
+/* ── 관심없음 버튼 ── */
+.article-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-bg-secondary);
+}
+
+.btn-dislike {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: calc(13px * var(--font-size-multiplier));
+  transition: all 0.15s ease;
+}
+
+.btn-dislike:hover {
+  background: var(--badge-red-bg);
+  color: var(--badge-red);
+  border-color: var(--badge-red);
+}
+
+/* ── 모바일 대응 ── */
+@media (max-width: 767px) {
+  .article-card {
+    padding: var(--spacing-md);
+  }
+  .article-card__title {
+    font-size: calc(16px * var(--font-size-multiplier));
+    padding-right: 50px;
+  }
+}
