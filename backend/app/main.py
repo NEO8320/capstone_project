@@ -69,10 +69,14 @@ async def lifespan(app: FastAPI):
         redis_client = None
         print(f"[Startup] Redis 연결 실패 (캐시 비활성): {e}")
 
-    # APScheduler 시작 (2단계에서 구현 예정)
-    # from app.services.crawler import start_scheduler
-    # start_scheduler()
-    print("[Startup] APScheduler 크롤링 스케줄러는 2단계에서 활성화됩니다.")
+    # APScheduler 크롤링 스케줄러 시작
+    try:
+        from app.services.pipeline import start_scheduler, stop_scheduler
+        start_scheduler()
+        print("[Startup] APScheduler 크롤링 스케줄러 시작 완료.")
+    except Exception as e:
+        stop_scheduler = None  # type: ignore
+        print(f"[Startup] 스케줄러 시작 실패 (서버는 계속 시작됨): {e}")
 
     print(f"[Startup] {settings.APP_NAME} 서버 준비 완료!")
 
@@ -85,7 +89,11 @@ async def lifespan(app: FastAPI):
         print("[Shutdown] Redis 연결 해제 완료.")
 
     # APScheduler 종료
-    # scheduler.shutdown(wait=True)
+    try:
+        from app.services.pipeline import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
     print("[Shutdown] 서버 종료 완료.")
 
 

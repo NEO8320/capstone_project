@@ -32,6 +32,9 @@ slowapi==0.1.9
 httpx==0.27.2
 aiohttp==3.10.8
 
+# HTML 파싱
+beautifulsoup4==4.12.3
+
 # 유틸리티
 psutil==6.0.0
 pydantic[email]==2.9.2
