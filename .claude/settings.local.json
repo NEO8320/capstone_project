@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "Bash(pip install:*)",
+      "Bash(python -c \"import uvicorn; print\\(uvicorn.__file__\\)\")",
+      "Bash(C:/Python312/python.exe -c \"import uvicorn; print\\(''ok''\\)\")",
+      "Bash(C:/Python312/python.exe -m pip install uvicorn fastapi)",
+      "Bash(C:/Python312/python.exe -m pip install uvicorn fastapi slowapi redis pydantic-settings \"pydantic[email]\" \"sqlalchemy[asyncio]\" asyncpg pgvector)",
+      "Bash(C:/Python312/python.exe -c \"import sys; print\\(sys.path\\)\")",
+      "Bash(C:/Python312/python.exe -m uvicorn --version)",
+      "Read(//c/Python312/Scripts/**)",
+      "Read(//c/Users/zkqkf/AppData/Roaming/Python/Python312/Scripts/**)",
+      "Bash(C:/Users/zkqkf/AppData/Roaming/Python/Python312/Scripts/uvicorn.exe app.main:app --host 0.0.0.0 --port 8000 --app-dir backend)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(taskkill //F //IM uvicorn.exe)",
+      "Bash(netstat -ano)",
+      "Bash(C:/Python312/python.exe -s -c \"import uvicorn\")",
+      "Bash(C:/Python312/python.exe -m pip install --target C:/Python312/Lib/site-packages uvicorn fastapi slowapi redis pydantic-settings \"pydantic[email]\" \"sqlalchemy[asyncio]\" asyncpg pgvector)",
+      "Bash(C:/Python312/python.exe -s -c \"import uvicorn; print\\(''ok:'', uvicorn.__version__\\)\")"
+    ]
+  }
+}

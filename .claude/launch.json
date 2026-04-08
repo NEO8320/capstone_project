@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "FastAPI Backend",
+      "runtimeExecutable": "C:/Python312/python.exe",
+      "runtimeArgs": ["start_backend.py"],
+      "port": 8000
+    }
+  ]
+}

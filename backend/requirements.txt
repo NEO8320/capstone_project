@@ -1,0 +1,39 @@
+# FastAPI & 서버
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+
+# 비동기 ORM & DB
+sqlalchemy[asyncio]==2.0.35
+asyncpg==0.29.0
+pgvector==0.3.5
+alembic==1.13.2
+
+# Redis 캐시
+redis[hiredis]==5.1.0
+
+# 인증
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
+
+# AI / 임베딩
+sentence-transformers==3.1.0
+anthropic==0.39.0
+openai==1.51.0
+
+# 스케줄러
+apscheduler==3.10.4
+
+# Rate Limiting
+slowapi==0.1.9
+
+# HTTP 클라이언트
+httpx==0.27.2
+aiohttp==3.10.8
+
+# 유틸리티
+psutil==6.0.0
+pydantic[email]==2.9.2
+pydantic-settings==2.5.2
+numpy==1.26.4
