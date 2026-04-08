@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL + pgvector ──
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: news_curator_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: news_curator
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # ── Redis ──
+  redis:
+    image: redis:7-alpine
+    container_name: news_curator_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:
