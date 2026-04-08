@@ -32,11 +32,21 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # ── 외부 API 키 ──
+    # ── 외부 API 키 (모두 Optional — 로컬 모델 사용 시 비워둬도 됨) ──
     NAVER_CLIENT_ID: str = ""
     NAVER_CLIENT_SECRET: str = ""
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
+
+    # ── LLM 엔진 설정 (NFR-E03: 환경변수로 유연하게 교체 가능) ──
+    # 1순위: 로컬 Ollama (Llama 3)
+    LLM_PRIMARY_MODEL: str = "llama3"
+    LLM_PRIMARY_BASE_URL: str = "http://localhost:11434/v1"
+    # 2순위: Claude Haiku (Anthropic API — API 키 있을 때만 활성)
+    LLM_FALLBACK_CLAUDE_MODEL: str = "claude-haiku-4-5-20251001"
+    # 3순위: OpenAI 호환 원격 (API 키 있을 때만 활성)
+    LLM_FALLBACK_OPENAI_MODEL: str = "gpt-4o-mini"
+    LLM_FALLBACK_OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
     # ── Ko-SBERT 임베딩 모델 설정 ──
     EMBEDDING_MODEL_NAME: str = "snunlp/KR-SBERT-V40K-klueNLI-augSTS"
