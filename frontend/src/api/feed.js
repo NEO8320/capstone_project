@@ -15,6 +15,6 @@ export const markRead = (articleUrl) =>
 export const dislikeArticle = (articleUrl) =>
   api.post(`/articles/${encodeURIComponent(articleUrl)}/dislike`);
 
-/** DELETE /articles/{url}/dislike — 관심없음 Undo */
+/** POST /v1/feed/dislike/undo — 관심없음 Undo (API-07) */
 export const undoDislike = (articleUrl) =>
-  api.delete(`/articles/${encodeURIComponent(articleUrl)}/dislike`);
+  api.post('/v1/feed/dislike/undo', { article_id: articleUrl });

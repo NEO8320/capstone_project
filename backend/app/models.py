@@ -43,13 +43,15 @@ DIM = settings.EMBEDDING_DIM  # 768
 # Enum: 기사 카테고리 (6개)
 # ============================================================
 class CategoryEnum(str, PyEnum):
-    """네이버 뉴스 6대 카테고리"""
+    """뉴스 기사 8대 카테고리"""
     POLITICS = "정치"
     ECONOMY = "경제"
     SOCIETY = "사회"
-    CULTURE = "생활/문화"
-    TECH = "IT/과학"
+    CULTURE = "생활·문화"
+    TECH = "IT·과학"
     WORLD = "세계"
+    ENTERTAINMENT = "연예"
+    SPORTS = "스포츠"
 
 
 # ============================================================
@@ -98,6 +100,27 @@ class Article(Base):
         Float, nullable=False, default=0.0,
         comment="기사 신뢰도 점수 (0~100)",
     )
+
+    # ── 신뢰도 sub-score 4개 (RB-01~RB-04) ──
+    # 프론트엔드 신뢰도 분석 차트에서 progress bar로 노출.
+    # nullable=True: 기존 DB 호환, NULL이면 프론트엔드가 종합 점수에서 합성
+    rb01_tone: Mapped[float | None] = mapped_column(
+        Float, nullable=True,
+        comment="RB-01 문체 중립성 (0~100) — 가중치 30%",
+    )
+    rb02_density: Mapped[float | None] = mapped_column(
+        Float, nullable=True,
+        comment="RB-02 정보 밀도 (0~100) — 가중치 25%",
+    )
+    rb03_quotes: Mapped[float | None] = mapped_column(
+        Float, nullable=True,
+        comment="RB-03 인용구 존재 (0~100) — 가중치 25%",
+    )
+    rb04_journalist: Mapped[float | None] = mapped_column(
+        Float, nullable=True,
+        comment="RB-04 기자 실명 (0~100) — 가중치 20%",
+    )
+
     press: Mapped[str] = mapped_column(String(100), nullable=False)
     journalist: Mapped[str | None] = mapped_column(String(100), nullable=True)
     published_at: Mapped[datetime] = mapped_column(

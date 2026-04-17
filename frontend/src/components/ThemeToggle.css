@@ -1,0 +1,37 @@
+/*
+ * ThemeToggle 스타일
+ * - 헤더 우측에 배치되는 아이콘 토글 버튼
+ * - 테마 변수 사용 (다크/라이트 자동 대응)
+ */
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-elevated, var(--color-bg));
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--color-bg-hover, var(--color-bg-secondary));
+  color: var(--color-accent, var(--color-link));
+  border-color: var(--color-accent, var(--color-link));
+}
+
+.theme-toggle__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.theme-toggle__label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}

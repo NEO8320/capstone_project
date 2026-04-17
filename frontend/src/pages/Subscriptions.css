@@ -1,0 +1,80 @@
+/* Subscriptions 페이지 스타일 */
+
+.subscriptions {
+  max-width: 600px;
+}
+
+.subs__hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-top: var(--spacing-xs);
+}
+
+.subs__section {
+  margin-top: var(--spacing-xl);
+}
+
+.subs__section-title {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.subs__empty {
+  margin-top: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.subs__list {
+  list-style: none;
+  margin-top: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subs__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: 8px;
+  transition: background 0.1s ease;
+}
+
+.subs__item:hover {
+  background: var(--color-bg-secondary);
+}
+
+.subs__item-name {
+  font-size: calc(15px * var(--font-size-multiplier));
+  color: var(--color-text-primary);
+}
+
+.btn-unsub {
+  padding: 4px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: calc(13px * var(--font-size-multiplier));
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-unsub:hover {
+  background: var(--badge-red-bg);
+  color: var(--badge-red);
+  border-color: var(--badge-red);
+}
+
+.subs-loading,
+.subs-error {
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--color-text-secondary);
+}

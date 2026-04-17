@@ -1,0 +1,49 @@
+/*
+ * CategoryFilter 탭 스타일
+ * - 가로 스크롤 가능 (모바일에서도 터치 스와이프)
+ * - 선택 탭은 accent 색상 하이라이트
+ */
+
+.cat-filter {
+  display: flex;
+  gap: var(--spacing-sm);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+/* 스크롤바 최소화 */
+.cat-filter::-webkit-scrollbar {
+  height: 4px;
+}
+.cat-filter::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong, var(--color-border));
+  border-radius: 2px;
+}
+
+.cat-filter__tab {
+  flex-shrink: 0;
+  padding: 6px 18px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 20px;
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.cat-filter__tab:hover {
+  border-color: var(--color-accent, var(--color-link));
+  color: var(--color-accent, var(--color-link));
+}
+
+.cat-filter__tab--active {
+  background: var(--color-accent, var(--color-link));
+  color: #fff;
+  border-color: var(--color-accent, var(--color-link));
+  font-weight: 600;
+}

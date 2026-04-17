@@ -14,14 +14,15 @@
   flex-direction: column;
   gap: var(--spacing-sm);
   padding: var(--spacing-lg);
-  background: var(--color-bg);
+  background: var(--color-bg-elevated, var(--color-bg));
   border: 1px solid var(--color-border);
   border-radius: var(--card-radius);
+  box-shadow: var(--shadow-card, none);
   transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .article-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-card, 0 4px 16px rgba(0, 0, 0, 0.08));
   transform: translateY(-2px);
 }
 
@@ -64,8 +65,35 @@
   border-radius: 4px;
   font-size: calc(11px * var(--font-size-multiplier));
   font-weight: 600;
-  color: var(--color-link);
-  background: #e8f0fe;
+  color: var(--color-accent, var(--color-link));
+  background: var(--color-accent-bg, #e8f0fe);
+}
+
+/* ── 읽음 태그 ── */
+.article-card__read-badge {
+  position: absolute;
+  top: var(--spacing-md);
+  left: calc(var(--spacing-md) + 48px);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: calc(11px * var(--font-size-multiplier));
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+}
+
+/* ── 읽은 기사: 시각적으로 흐리게 표시 ── */
+.article-card--read {
+  opacity: 0.6;
+}
+
+.article-card--read:hover {
+  opacity: 0.85;
+}
+
+.article-card--read .article-card__title-btn {
+  color: var(--color-text-secondary);
+  font-weight: 500;
 }
 
 /* ── 카테고리 태그 ── */
@@ -90,11 +118,20 @@
   padding-right: 60px;
 }
 
-.article-card__title a {
+.article-card__title-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
   color: var(--color-text-primary);
+  cursor: pointer;
+  width: 100%;
 }
 
-.article-card__title a:hover {
+.article-card__title-btn:hover {
   color: var(--color-link);
 }
 

@@ -1,38 +1,60 @@
 """
-LLM 처리 모듈 (요약, 카테고리 분류, 신뢰도 점수 산출)
-======================================================
+LLM 처리 모듈 — CT-01(요약) / CT-02(분류) 분리 아키텍처
+=========================================================
 
-LLM 호출 우선순위 (NFR-E03: 환경변수로 유연하게 교체 가능):
-  1순위: 로컬 Ollama (Llama 3) — LLM_PRIMARY_BASE_URL / LLM_PRIMARY_MODEL
-  2순위: Claude Haiku          — ANTHROPIC_API_KEY가 있을 때만
-  3순위: OpenAI 호환 원격       — OPENAI_API_KEY가 있을 때만
+CT-01 (LlamaService): 기사 본문 → 3줄 요약 (5W1H 한국어)
+  - 엔진: 로컬 Ollama (Llama 3)
+  - 프롬프트: 5W1H 핵심 사실 위주, 한국어 출력
+  - ★ 신뢰도 평가는 LLM이 아닌 규칙 기반 credibility.py 에서 수행
 
-모든 모델명과 API 주소는 config.py / .env에서 관리하므로
-코드 수정 없이 환경변수만 바꿔서 LLM 엔진을 교체할 수 있다.
+CT-02 (GPTService): 기사 제목 + 3줄 요약 → 카테고리 분류
+  - 엔진: OpenAI GPT API (gpt-4o-mini)
+  - 입력: "기사 제목 [SEP] 3줄 요약" (512 토큰 제한)
+  - 출력: 8개 카테고리 중 하나
 
-신뢰도 점수 산출 공식:
-  Score = (문체_중립성 x 0.30) + (정보_밀도 x 0.25)
-        + (인용구_존재 x 0.25) + (기자_실명 x 0.20)
+신뢰도 평가 ID 체계 (RB-01~RB-05):  ← credibility.py 참조
+  RB-01: 문체 중립성 (30%) — 감정·선정적 어휘 출현 빈도 (규칙 기반)
+  RB-02: 정보 밀도   (25%) — 숫자·날짜·단위 밀도 (정규식)
+  RB-03: 인용구      (25%) — 직접/간접 인용 개수 (정규식)
+  RB-04: 기자 실명   (20%) — 바이라인 존재 여부
+  RB-05: 뱃지 등급 — 90+:높음 / 70~89:보통 / 69이하:낮음 (UI 단계)
 
+  ※ 이전에는 LLM에게 RB-01~04 점수를 직접 생성시켰으나, Llama 3 8B가
+     JSON 스키마의 일부 서브필드를 빈번히 누락해 `_clamp` fallback(50)으로
+     수렴하는 버그가 있었다. 현재는 credibility.py 에서 결정론적으로 계산.
+
+설정값: config.yaml (NFR-E03)에서 모델명·엔드포인트를 읽어온다.
 서킷 브레이커: 5회 연속 실패 시 30초간 호출 차단.
 """
 
-import json
+import asyncio
 import re
 
 import openai
 
 from app.core.config import settings
+from app.core.yaml_config import get_yaml_config
+from app.services.credibility import calculate_credibility
 from app.services.resilience import CircuitBreaker
 
 # ── LLM API 전용 서킷 브레이커 ──
 llm_circuit = CircuitBreaker(name="llm_api", failure_threshold=5, recovery_timeout=30.0)
 
-# ── 유효 카테고리 목록 ──
-VALID_CATEGORIES = ["정치", "경제", "사회", "생활/문화", "IT/과학", "세계"]
+# ── 유효 카테고리 목록 (8종) ──
+VALID_CATEGORIES = [
+    "정치", "경제", "사회", "IT·과학", "생활·문화", "세계", "연예", "스포츠",
+]
 
-# ── LLM 프롬프트 템플릿 ──
-SUMMARY_PROMPT = """다음 뉴스 기사를 분석하여 JSON 형식으로 응답해 주세요.
+
+# ============================================================
+# CT-01 프롬프트: 3줄 요약 전용 (5W1H 핵심 사실 위주)
+# ============================================================
+# ※ 이전 버전은 신뢰도 서브스코어(RB-01~04)까지 LLM에게 동시 생성시켰지만,
+#    Llama 3 8B가 JSON 스키마의 숫자 서브필드를 빈번히 누락하거나 placeholder
+#    문자열을 반환해 _clamp fallback(50)으로 수렴 → 전 기사가 신뢰도 50대로
+#    몰리는 버그가 있었다. 이제 LLM은 요약만 담당하고, 신뢰도는 credibility.py
+#    가 결정론적으로 계산한다.
+CT01_SUMMARY_PROMPT = """다음 뉴스 기사의 핵심을 3줄로 요약해주세요.
 
 [기사 제목]
 {title}
@@ -40,220 +62,249 @@ SUMMARY_PROMPT = """다음 뉴스 기사를 분석하여 JSON 형식으로 응�
 [기사 본문]
 {body}
 
-다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
-{{
-  "summary": "3줄 요약 (각 줄은 '\\n'으로 구분)",
-  "category": "정치|경제|사회|생활/문화|IT/과학|세계 중 하나",
-  "credibility": {{
-    "tone_neutrality": 0~100 사이 정수 (감정적/선정적 표현이 없으면 높은 점수),
-    "info_density": 0~100 사이 정수 (구체적 수치/데이터/팩트가 많으면 높은 점수),
-    "has_quotes": 0~100 사이 정수 (직접 인용구가 있으면 높은 점수, 없으면 낮은 점수),
-    "journalist_named": 0~100 사이 정수 (기자 실명이 있으면 100, 없으면 0)
-  }}
-}}"""
+**반드시 한국어**로 작성하고, 5W1H(누가·언제·어디서·무엇을·왜·어떻게)
+중에서 기사에 드러난 핵심 사실을 중심으로 3줄을 작성하세요.
+각 줄은 한 문장씩, 줄바꿈(\\n)으로 구분합니다.
+다른 설명·머리말·마크다운 없이 요약 텍스트만 출력하세요."""
 
 
+# ============================================================
+# CT-02 프롬프트: 카테고리 분류 (8개 카테고리)
+# ============================================================
+CT02_CLASSIFY_PROMPT = """다음 뉴스 기사의 카테고리를 분류하세요.
+
+입력:
+{input_text}
+
+위 기사를 아래 8개 카테고리 중 **정확히 하나**로 분류하세요:
+정치 | 경제 | 사회 | IT·과학 | 생활·문화 | 세계 | 연예 | 스포츠
+
+카테고리 이름만 출력하세요 (다른 텍스트 없이)."""
+
+
+# ============================================================
+# CT-01: LlamaService — 3줄 요약 + 신뢰도 평가
+# ============================================================
+class LlamaService:
+    """
+    CT-01: Llama 로컬 모델을 사용한 3줄 요약 및 신뢰도 평가.
+    config.yaml → llm.summarizer 섹션에서 모델/엔드포인트를 읽는다.
+    """
+
+    @staticmethod
+    async def summarize(
+        title: str, body: str, journalist: str | None = None,
+    ) -> str | None:
+        """
+        기사 본문 → 3줄 요약 (텍스트만 반환).
+
+        신뢰도 서브스코어(RB-01~04)는 여기서 계산하지 않고,
+        상위 호출자(process_article_with_llm)가 credibility.calculate_credibility()
+        로 별도 계산한다.
+
+        Args:
+            title: 기사 제목
+            body: 기사 본문
+            journalist: 기자 실명 (현재는 미사용. 인터페이스 호환 유지)
+
+        Returns:
+            3줄 요약 문자열 또는 실패 시 None
+        """
+        try:
+            cfg = get_yaml_config().get("llm", {}).get("summarizer", {})
+            model = cfg.get("model", settings.LLM_PRIMARY_MODEL)
+            base_url = cfg.get("base_url", settings.LLM_PRIMARY_BASE_URL)
+            max_tokens = cfg.get("max_tokens", 1024)
+            temperature = cfg.get("temperature", 0.3)
+
+            truncated_body = body[:3000] if len(body) > 3000 else body
+            prompt = CT01_SUMMARY_PROMPT.format(title=title, body=truncated_body)
+
+            client = openai.AsyncOpenAI(
+                base_url=base_url,
+                api_key="ollama",  # 로컬 서버는 키 불필요
+            )
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            text = (response.choices[0].message.content or "").strip()
+            if not text:
+                print("[CT-01] Llama 응답이 비어 있음")
+                return None
+
+            # 간혹 Llama가 '요약:', '## Summary' 같은 머리말을 붙이는 경우 제거
+            text = re.sub(r"^\s*(요약|Summary|##.*?)\s*[:：]\s*", "", text)
+            print(f"[CT-01] Llama 요약 성공 ({model})")
+            return text
+        except Exception as e:
+            print(f"[CT-01] Llama 요약 실패: {e}")
+            return None
+
+
+# ============================================================
+# CT-02: GPTService — 카테고리 분류
+# ============================================================
+class GPTService:
+    """
+    CT-02: OpenAI GPT API를 사용한 카테고리 분류.
+    config.yaml → llm.classifier 섹션에서 모델/엔드포인트를 읽는다.
+    입력: "기사 제목 [SEP] 3줄 요약" (512 토큰 제한)
+    출력: 8개 카테고리 중 하나
+    """
+
+    @staticmethod
+    async def classify(title: str, summary: str) -> str | None:
+        """
+        기사 제목 + 3줄 요약 → 카테고리 분류.
+        최대 3회 재시도, 지수 백오프 적용. (Task 3)
+
+        Returns:
+            카테고리 문자열 또는 실패 시 None
+        """
+        MAX_RETRIES = 3
+
+        cfg = get_yaml_config().get("llm", {}).get("classifier", {})
+        model = cfg.get("model", settings.LLM_FALLBACK_OPENAI_MODEL)
+        base_url = cfg.get("base_url", settings.LLM_FALLBACK_OPENAI_BASE_URL)
+        max_tokens = cfg.get("max_tokens", 512)
+        temperature = cfg.get("temperature", 0.1)
+
+        api_key = settings.OPENAI_API_KEY
+        if not api_key:
+            print("[CT-02] OPENAI_API_KEY 미설정 — GPT 분류 건너뜀")
+            return None
+
+        # 입력 포맷: "기사 제목 [SEP] 3줄 요약"
+        input_text = f"{title} [SEP] {summary}"
+        prompt = CT02_CLASSIFY_PROMPT.format(input_text=input_text)
+
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key)
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                result_text = response.choices[0].message.content.strip()
+                category = _parse_category(result_text)
+                if category:
+                    print(f"[CT-02] GPT 분류 성공 ({model}): {category}")
+                    return category
+
+                # 파싱 실패 → 재시도
+                if attempt < MAX_RETRIES:
+                    print(
+                        f"[CT-02] 카테고리 파싱 실패 "
+                        f"(시도 {attempt}/{MAX_RETRIES}): '{result_text}'"
+                    )
+                    await asyncio.sleep(0.5 * attempt)
+                    continue
+                print(f"[CT-02] 카테고리 파싱 최종 실패: '{result_text}'")
+            except Exception as e:
+                if attempt < MAX_RETRIES:
+                    print(
+                        f"[CT-02] GPT API 오류 "
+                        f"(시도 {attempt}/{MAX_RETRIES}): {e}"
+                    )
+                    await asyncio.sleep(1.0 * attempt)
+                    continue
+                print(f"[CT-02] GPT 분류 최종 실패: {e}")
+
+        return None
+
+
+# ============================================================
+# 통합 처리 함수 (파이프라인 호출용)
+# ============================================================
 async def process_article_with_llm(
     title: str,
     body: str,
     journalist: str | None = None,
 ) -> dict | None:
     """
-    LLM을 통해 기사를 분석한다: 3줄 요약 + 카테고리 분류 + 신뢰도 점수.
+    CT-01 → CT-02 순차 호출 + 규칙 기반 신뢰도 계산.
 
-    호출 우선순위:
-      1) 로컬 Ollama (Llama 3) — 항상 시도
-      2) Claude Haiku          — ANTHROPIC_API_KEY 있을 때
-      3) OpenAI 원격           — OPENAI_API_KEY 있을 때
+    1단계 (CT-01): Llama로 3줄 요약
+    2단계 (CT-02): GPT로 카테고리 분류 (CT-01 요약을 입력)
+    3단계 (규칙)   : credibility.calculate_credibility() 로 RB-01~04 산출
+
+    ★ 과거 아키텍처와의 차이:
+      - 이전: Llama가 JSON 스키마로 summary + credibility를 동시 반환
+        → Llama 8B가 숫자 서브필드를 자주 누락/placeholder화
+        → _clamp fallback 50 + cred.get(..., 50) 기본값 조합으로
+          대부분의 기사가 신뢰도 45~55점으로 몰림
+      - 현재: LLM은 요약만 담당, 신뢰도는 결정론적 규칙 계산
+        → 같은 기사 → 항상 같은 점수, 기사별 편차가 실제로 드러남
 
     Args:
         title: 기사 제목
-        body: 기사 본문 (정제 완료)
+        body: 기사 본문
         journalist: 기자명 (없으면 None)
 
     Returns:
-        {"summary": str, "category": str, "credibility": float}
-        또는 실패 시 None
+        {"summary": str, "category": str, "credibility": float,
+         "rb01_tone", "rb02_density", "rb03_quotes", "rb04_journalist"}
+        또는 요약 실패 시 None (상위에서 description 폴백)
     """
-    # 서킷 브레이커 확인
     if not llm_circuit.can_call():
         return None
 
-    # 본문이 너무 길면 앞부분만 사용 (토큰 절약)
-    truncated_body = body[:3000] if len(body) > 3000 else body
-    prompt = SUMMARY_PROMPT.format(title=title, body=truncated_body)
+    # ── CT-01: Llama 요약 (문자열 반환) ──
+    summary_text = await LlamaService.summarize(title, body, journalist)
 
-    result = None
-
-    # ── 1순위: 로컬 Ollama (Llama 3) ──
-    result = await _call_ollama_local(prompt)
-
-    # ── 2순위: Claude Haiku (API 키 있을 때만) ──
-    if result is None and settings.ANTHROPIC_API_KEY:
-        result = await _call_claude(prompt)
-
-    # ── 3순위: OpenAI 호환 원격 (API 키 있을 때만) ──
-    if result is None and settings.OPENAI_API_KEY:
-        result = await _call_openai_remote(prompt)
-
-    if result is None:
+    if summary_text is None:
         await llm_circuit.record_failure()
         return None
 
-    await llm_circuit.record_success()
+    # ── CT-02: GPT 분류 (CT-01의 요약을 입력으로) ──
+    category = await GPTService.classify(title, summary_text)
 
-    # ── 응답 파싱 및 신뢰도 점수 가중합산 ──
-    try:
-        parsed = _parse_llm_response(result, journalist)
-        return parsed
-    except Exception as e:
-        print(f"[LLM] 응답 파싱 실패: {e}")
-        return None
-
-
-# ============================================================
-# 1순위: 로컬 Ollama (OpenAI 호환 API)
-# ============================================================
-async def _call_ollama_local(prompt: str) -> str | None:
-    """
-    로컬 Ollama 서버에 OpenAI 호환 API로 요청한다.
-
-    Ollama는 /v1/chat/completions 엔드포인트를 지원하므로
-    openai 라이브러리를 그대로 사용하되 base_url만 변경한다.
-    API 키는 불필요하지만, openai 라이브러리가 키를 요구하므로
-    더미 문자열("ollama")을 전달한다.
-
-    설정값:
-      - LLM_PRIMARY_BASE_URL: http://localhost:11434/v1 (기본값)
-      - LLM_PRIMARY_MODEL: llama3 (기본값)
-    """
-    try:
-        client = openai.AsyncOpenAI(
-            base_url=settings.LLM_PRIMARY_BASE_URL,
-            api_key="ollama",  # 로컬 서버는 키 불필요, 더미값
-        )
-        response = await client.chat.completions.create(
-            model=settings.LLM_PRIMARY_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1024,
-            temperature=0.3,
-        )
-        text = response.choices[0].message.content
-        print(f"[LLM] Ollama 로컬 ({settings.LLM_PRIMARY_MODEL}) 호출 성공")
-        return text
-    except Exception as e:
-        print(f"[LLM] Ollama 로컬 호출 실패: {e}")
-        return None
-
-
-# ============================================================
-# 2순위: Claude Haiku (Anthropic API)
-# ============================================================
-async def _call_claude(prompt: str) -> str | None:
-    """
-    Anthropic Claude API를 호출한다.
-
-    설정값:
-      - LLM_FALLBACK_CLAUDE_MODEL (기본: claude-haiku-4-5-20251001)
-      - ANTHROPIC_API_KEY (비어있으면 이 함수 자체가 호출되지 않음)
-    """
-    try:
-        import anthropic
-
-        client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        message = await client.messages.create(
-            model=settings.LLM_FALLBACK_CLAUDE_MODEL,
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        print(f"[LLM] Claude ({settings.LLM_FALLBACK_CLAUDE_MODEL}) 호출 성공")
-        return message.content[0].text
-    except Exception as e:
-        print(f"[LLM] Claude API 호출 실패: {e}")
-        return None
-
-
-# ============================================================
-# 3순위: OpenAI 호환 원격 API
-# ============================================================
-async def _call_openai_remote(prompt: str) -> str | None:
-    """
-    OpenAI 호환 원격 API를 호출한다.
-
-    설정값:
-      - LLM_FALLBACK_OPENAI_BASE_URL (기본: https://api.openai.com/v1)
-      - LLM_FALLBACK_OPENAI_MODEL (기본: gpt-4o-mini)
-      - OPENAI_API_KEY (비어있으면 이 함수 자체가 호출되지 않음)
-    """
-    try:
-        client = openai.AsyncOpenAI(
-            base_url=settings.LLM_FALLBACK_OPENAI_BASE_URL,
-            api_key=settings.OPENAI_API_KEY,
-        )
-        response = await client.chat.completions.create(
-            model=settings.LLM_FALLBACK_OPENAI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1024,
-            temperature=0.3,
-        )
-        print(f"[LLM] OpenAI 원격 ({settings.LLM_FALLBACK_OPENAI_MODEL}) 호출 성공")
-        return response.choices[0].message.content
-    except Exception as e:
-        print(f"[LLM] OpenAI 원격 API 호출 실패: {e}")
-        return None
-
-
-# ============================================================
-# 응답 파싱 + 신뢰도 점수 가중합산
-# ============================================================
-def _parse_llm_response(response_text: str, journalist: str | None) -> dict:
-    """
-    LLM 응답 JSON을 파싱하고 신뢰도 점수를 가중합산한다.
-
-    신뢰도 점수 공식:
-      Score = (tone_neutrality x 0.30) + (info_density x 0.25)
-            + (has_quotes x 0.25) + (journalist_named x 0.20)
-    """
-    # JSON 블록 추출 (```json ... ``` 감싸진 경우 대비)
-    json_match = re.search(r"\{[\s\S]*\}", response_text)
-    if not json_match:
-        raise ValueError(f"JSON을 찾을 수 없음: {response_text[:200]}")
-
-    data = json.loads(json_match.group())
-
-    summary = data.get("summary", "요약 없음")
-
-    category = data.get("category", "사회")
-    if category not in VALID_CATEGORIES:
+    if category is None:
+        # GPT 실패 시 기본 카테고리 (파이프라인 중단 방지)
         category = "사회"
 
-    cred = data.get("credibility", {})
-    tone_neutrality = _clamp(cred.get("tone_neutrality", 50))
-    info_density = _clamp(cred.get("info_density", 50))
-    has_quotes = _clamp(cred.get("has_quotes", 50))
+    await llm_circuit.record_success()
 
-    if journalist and journalist.strip():
-        journalist_named = 100
-    else:
-        journalist_named = _clamp(cred.get("journalist_named", 0))
-
-    credibility_score = (
-        tone_neutrality * 0.30
-        + info_density * 0.25
-        + has_quotes * 0.25
-        + journalist_named * 0.20
-    )
+    # ── 규칙 기반 신뢰도 계산 (결정론적, LLM 의존 없음) ──
+    cred = calculate_credibility(title=title, body=body, journalist=journalist)
 
     return {
-        "summary": summary,
+        "summary": summary_text,
         "category": category,
-        "credibility": round(credibility_score, 2),
+        "credibility": cred["credibility"],
+        "rb01_tone": cred["rb01_tone"],
+        "rb02_density": cred["rb02_density"],
+        "rb03_quotes": cred["rb03_quotes"],
+        "rb04_journalist": cred["rb04_journalist"],
     }
 
 
-def _clamp(value: int | float, min_val: float = 0, max_val: float = 100) -> float:
-    """값을 [min_val, max_val] 범위로 클램핑한다."""
-    try:
-        return max(min_val, min(max_val, float(value)))
-    except (TypeError, ValueError):
-        return 50.0
+# ============================================================
+# 파싱 헬퍼
+# ============================================================
+# GPT 출력 변형 → 정규 카테고리 매핑 (Output parsing error 방지, Task 3)
+_CATEGORY_FUZZY_MAP = {
+    "IT": "IT·과학", "it": "IT·과학", "과학": "IT·과학", "기술": "IT·과학",
+    "IT/과학": "IT·과학", "IT과학": "IT·과학",
+    "생활": "생활·문화", "문화": "생활·문화", "생활/문화": "생활·문화",
+    "국제": "세계", "외교": "세계", "글로벌": "세계",
+}
+
+
+def _parse_category(text: str) -> str | None:
+    """CT-02 응답에서 유효한 카테고리 문자열을 파싱한다. 퍼지 매칭 포함."""
+    text = text.strip().strip('"').strip("'")
+    # 1차: 정확 매칭
+    for cat in VALID_CATEGORIES:
+        if cat in text:
+            return cat
+    # 2차: 퍼지 매칭 (GPT가 유사 표현을 반환한 경우)
+    for keyword, cat in _CATEGORY_FUZZY_MAP.items():
+        if keyword in text:
+            return cat
+    return None

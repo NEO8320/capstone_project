@@ -4,14 +4,15 @@
  *
  * 표시 항목:
  *   - 기사 제목, 3줄 요약, 언론사, 기자명, 발행시간
- *   - 신뢰도 3단계 배지 (우측 상단): 초록(90+), 노랑(70~89), 빨강(~69)
+ *   - 신뢰도 점수 배지 (우측 상단): 초록(90+), 노랑(70~89), 빨강(~69)
  *   - 관심없음 버튼 (하단)
  *
  * 동작:
- *   - 제목 클릭 → 원문 언론사 페이지가 새 탭으로 열림 (저작권 보호)
+ *   - 제목 클릭 → 앱 내 기사 상세 페이지(/article?url=...)로 이동 + onRead 호출
  *   - 관심없음 클릭 → 카드 즉시 숨김 + onDislike 콜백 호출
  */
 
+import { useNavigate } from 'react-router-dom';
 import './ArticleCard.css';
 
 /** 발행 시간을 '~분 전', '~시간 전' 등으로 변환 */
@@ -33,26 +34,40 @@ function formatTimeAgo(dateString) {
   return published.toLocaleDateString('ko-KR');
 }
 
-/** 신뢰도 점수 → 배지 정보 매핑 */
-function getBadgeInfo(credibility) {
-  if (credibility >= 90) return { label: '높음', className: 'badge--green' };
-  if (credibility >= 70) return { label: '보통', className: 'badge--yellow' };
-  return { label: '낮음', className: 'badge--red' };
+/** 신뢰도 점수 → 배지 색상 클래스 매핑 */
+function getBadgeClass(credibility) {
+  if (credibility >= 90) return 'badge--green';
+  if (credibility >= 70) return 'badge--yellow';
+  return 'badge--red';
 }
 
-export default function ArticleCard({ item, onDislike }) {
-  const { article, is_subscribed } = item;
-  const badge = getBadgeInfo(article.credibility);
+export default function ArticleCard({ item, onDislike, onRead }) {
+  const navigate = useNavigate();
+
+  // Bug #4 방어: item 또는 item.article이 null/undefined면 렌더링하지 않는다.
+  // Feed.jsx의 filter에서 걸러지지만, 만약의 경우를 위한 최종 방어선.
+  if (!item || !item.article) {
+    return null;
+  }
+
+  const { article, is_subscribed, is_read } = item;
+
+  const handleTitleClick = () => {
+    if (onRead && article.url) onRead(article.url);
+    navigate(`/article?url=${encodeURIComponent(article.url || '')}`);
+  };
 
   return (
-    <article className="article-card" role="article">
-      {/* ── 신뢰도 배지 (우측 상단) ── */}
+    <article
+      className={`article-card${is_read ? ' article-card--read' : ''}`}
+      role="article"
+    >
+      {/* ── 신뢰도 점수 배지 (우측 상단) ── */}
       <span
-        className={`article-card__badge ${badge.className}`}
-        title={`신뢰도 ${Math.round(article.credibility)}점`}
-        aria-label={`신뢰도 ${badge.label}`}
+        className={`article-card__badge ${getBadgeClass(article.credibility ?? 0)}`}
+        aria-label={`신뢰도 ${Math.round(article.credibility ?? 0)}점`}
       >
-        {badge.label}
+        {Math.round(article.credibility ?? 0)}점
       </span>
 
       {/* ── 구독 표시 ── */}
@@ -62,19 +77,25 @@ export default function ArticleCard({ item, onDislike }) {
         </span>
       )}
 
+      {/* ── 읽음 표시 ── */}
+      {is_read && (
+        <span className="article-card__read-badge" aria-label="이미 읽은 기사">
+          읽음
+        </span>
+      )}
+
       {/* ── 카테고리 태그 ── */}
       <span className="article-card__category">{article.category}</span>
 
-      {/* ── 제목: 클릭 시 원문 새 탭 열기 (저작권 보호) ── */}
+      {/* ── 제목: 클릭 시 앱 내 상세 페이지로 이동 ── */}
       <h3 className="article-card__title">
-        <a
-          href={article.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${article.title} — 원문 보기 (새 탭)`}
+        <button
+          className="article-card__title-btn"
+          onClick={handleTitleClick}
+          aria-label={`${article.title} 상세 보기`}
         >
           {article.title}
-        </a>
+        </button>
       </h3>
 
       {/* ── 3줄 요약 ── */}
@@ -100,8 +121,8 @@ export default function ArticleCard({ item, onDislike }) {
       <div className="article-card__actions">
         <button
           className="btn-dislike"
-          onClick={() => onDislike(article.url)}
-          aria-label={`${article.title} 관심없음`}
+          onClick={() => onDislike && article.url && onDislike(article.url)}
+          aria-label={`${article.title || '기사'} 관심없음`}
         >
           관심없음
         </button>

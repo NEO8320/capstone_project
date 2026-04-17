@@ -1,0 +1,174 @@
+/* ── Auth 공통 스타일 (Register / Login) — 테마 대응 ── */
+.auth-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+  padding: 2rem;
+}
+
+.auth-card {
+  background: var(--color-bg-elevated, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 2.5rem;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.06));
+}
+
+.auth-card__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0 0 0.25rem;
+  text-align: center;
+}
+
+.auth-card__subtitle {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin: 0 0 1.5rem;
+  text-align: center;
+}
+
+.auth-card__error {
+  background: var(--badge-red-bg);
+  color: var(--badge-red);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--badge-red);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-form__label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.auth-form__input {
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 1rem;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  transition: border-color 0.15s;
+}
+
+.auth-form__input:focus {
+  outline: none;
+  border-color: var(--color-accent, var(--color-link));
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+.auth-form__fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 0;
+}
+
+.auth-form__legend {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  padding: 0 0.35rem;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.category-btn {
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  transition: all 0.15s;
+}
+
+.category-btn:hover {
+  border-color: var(--color-accent, var(--color-link));
+  color: var(--color-accent, var(--color-link));
+}
+
+.category-btn--selected {
+  background: var(--color-accent, var(--color-link));
+  color: #fff;
+  border-color: var(--color-accent, var(--color-link));
+}
+
+.auth-form__submit {
+  padding: 0.75rem;
+  background: var(--color-accent, var(--color-link));
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 0.5rem;
+}
+
+.auth-form__submit:hover:not(:disabled) {
+  background: var(--color-accent-hover, var(--color-link));
+}
+
+.auth-form__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-card__link {
+  text-align: center;
+  margin-top: 1.25rem;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.auth-card__link a {
+  color: var(--color-accent, var(--color-link));
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.auth-card__link a:hover {
+  text-decoration: underline;
+}
+
+/* ── 카테고리 힌트 텍스트 ── */
+.auth-form__hint {
+  font-size: 0.8rem;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 480px) {
+  .category-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .auth-card {
+    padding: 1.5rem;
+  }
+}

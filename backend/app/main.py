@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 FastAPI 애플리케이션 엔트리포인트
 ==================================
@@ -9,12 +10,12 @@ FastAPI 애플리케이션 엔트리포인트
   4. 라우터 등록: 피드, 피드백 (3단계), 인증/구독/설정 (4단계 예정)
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -24,30 +25,116 @@ from app.core.limiter import limiter
 from app.core import redis as redis_module
 
 
+# ============================================================
+# 즉시 크롤링 태스크 (서버 시작 직후 백그라운드 1회 실행)
+# ============================================================
+# uvicorn --reload 시 자식 프로세스에서 한 번만 실행되도록 하는 모듈 레벨 플래그.
+# 같은 프로세스에서 lifespan이 두 번 호출되어도 중복 크롤링을 방지한다.
+_STARTUP_CRAWL_STARTED = False
+
+
+async def _startup_crawl():
+    """
+    서버 시작 직후 백그라운드에서 1회만 실행되는 즉시 크롤링 태스크.
+
+    ■ 실행 순서 (순차 await로 레이스 방지):
+      1. Ko-SBERT 모델 프리로드 대기
+         — 크롤링 중 get_embedding()이 모델 로드를 기다리며 블로킹되는 것을 방지
+      2. DB가 비어 있으면 샘플 기사 자동 시드
+         — 콜드 스타트 사용자가 5초 내로 피드를 볼 수 있게
+      3. run_crawl_pipeline_safely() 1회 실행
+      4. 크롤링 결과가 0건이면 60초 후 STARTUP_CRAWL_RETRY_ON_ZERO회 재시도
+
+    ■ 더블 크롤링 방지:
+      APScheduler는 1시간 주기로 별도 실행되며, 첫 실행은 T+1h이므로
+      본 startup 태스크와 시간이 겹치지 않는다.
+
+    ■ lifespan 블로킹 방지:
+      이 함수는 asyncio.ensure_future()로 호출되어 yield를 블로킹하지 않는다.
+    """
+    global _STARTUP_CRAWL_STARTED
+    if _STARTUP_CRAWL_STARTED:
+        print("[Startup] 즉시 크롤링이 이미 실행됨 — 건너뜀 (reload 재기동 감지)")
+        return
+    _STARTUP_CRAWL_STARTED = True
+
+    print("[Startup] 즉시 크롤링 대기 중... (Ko-SBERT 프리로드 완료 후 시작)")
+
+    # ── Step 1: Ko-SBERT 프리로드 (순차 대기) ──
+    try:
+        from app.services.embedding import get_embedding
+        await get_embedding("모델 워밍업")
+        print("[Startup] Ko-SBERT 모델 프리로드 완료.")
+    except Exception as e:
+        print(f"[Startup] Ko-SBERT 프리로드 실패 — 크롤링 중단: {e}")
+        return  # 임베딩 없이는 크롤링·시드가 모두 실패하므로 중단
+
+    # ── Step 2: 빈 DB 자동 시드 ──
+    if settings.AUTO_SEED_ON_EMPTY_DB:
+        try:
+            from app.api.admin import seed_sample_articles_if_empty
+            from app.core.database import async_session
+            async with async_session() as db:
+                seeded = await seed_sample_articles_if_empty(db)
+                if seeded:
+                    print(
+                        f"[Startup] 샘플 기사 {seeded}건 자동 시드 완료 "
+                        f"(피드 즉시 사용 가능)"
+                    )
+        except Exception as e:
+            print(f"[Startup] 샘플 시드 실패 (서버는 계속 진행): {e}")
+
+    # ── Step 3: 실제 크롤링 실행 (재시도 루프) ──
+    if not settings.CRAWL_ON_STARTUP:
+        print("[Startup] CRAWL_ON_STARTUP=False — 즉시 크롤링 건너뜀")
+        return
+
+    from app.services.pipeline import run_crawl_pipeline_safely
+
+    retries_left = settings.STARTUP_CRAWL_RETRY_ON_ZERO
+    attempt = 0
+    while True:
+        attempt += 1
+        print(f"[Startup] 크롤링 즉시 실행 시작 (시도 {attempt})")
+        saved = await run_crawl_pipeline_safely()
+        print(f"[Startup] 크롤링 완료: {saved}건 DB 저장됨")
+
+        if saved > 0 or retries_left <= 0:
+            break
+
+        retries_left -= 1
+        print(
+            f"[Startup] 크롤링 결과 0건 — 60초 후 재시도 "
+            f"(남은 재시도: {retries_left})"
+        )
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     FastAPI 비동기 lifespan 컨텍스트 매니저.
 
     시작 시:
-      1. PostgreSQL + pgvector 테이블 초기화
+      1. PostgreSQL + pgvector 테이블 초기화 (지수 백오프 재시도)
       2. Redis 연결 풀 생성
-      3. APScheduler 크롤링 스케줄러 시작
+      3. APScheduler 등록 (1시간 주기, 첫 실행은 T+1h)
+      4. 즉시 크롤링 태스크를 백그라운드 fire-and-forget 등록
+         (내부에서 Ko-SBERT 프리로드 → 시드 → 크롤링 순차 실행)
 
     종료 시:
       1. Redis 연결 풀 해제
       2. APScheduler 정상 종료
     """
-    # ── 시작(Startup) ──
-    # DB 초기화 (PostgreSQL 미실행 시 경고 후 계속 진행)
+    # ── 1. DB 초기화 (재시도 루프, 실패해도 서버는 시작) ──
     try:
-        print("[Startup] PostgreSQL + pgvector 초기화 중...")
+        print("[Startup] PostgreSQL + pgvector 초기화 중 (재시도 포함)...")
         await init_db()
         print("[Startup] DB 초기화 완료.")
     except Exception as e:
-        print(f"[Startup] DB 연결 실패 (서버는 계속 시작됨): {e}")
+        print(f"[Startup] DB 초기화 최종 실패 (서버는 계속 시작됨): {e}")
 
-    # Redis 연결 (미실행 시 경고 후 계속 진행)
+    # ── 2. Redis 연결 ──
     try:
         print("[Startup] Redis 연결 중...")
         redis_module.redis_client = aioredis.from_url(
@@ -61,13 +148,17 @@ async def lifespan(app: FastAPI):
         redis_module.redis_client = None
         print(f"[Startup] Redis 연결 실패 (캐시 비활성): {e}")
 
-    # APScheduler 크롤링 스케줄러 시작
+    # ── 3. APScheduler 크롤링 스케줄러 시작 (1시간 주기 등록만) ──
     try:
         from app.services.pipeline import start_scheduler
         start_scheduler()
         print("[Startup] APScheduler 크롤링 스케줄러 시작 완료.")
     except Exception as e:
         print(f"[Startup] 스케줄러 시작 실패 (서버는 계속 시작됨): {e}")
+
+    # ── 4. 즉시 크롤링 태스크를 백그라운드에 등록 (yield 블로킹 없음) ──
+    # 내부에서 Ko-SBERT 프리로드 → 자동 시드 → run_crawl_pipeline 순차 실행
+    asyncio.ensure_future(_startup_crawl())
 
     print(f"[Startup] {settings.APP_NAME} 서버 준비 완료!")
 
@@ -107,7 +198,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",  # Vite 개발 서버
-        "http://localhost:3000",  # 대체 포트
+        "http://localhost:5174",  # Vite 개발 서버 (포트 충돌 시 대체)
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://localhost:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -118,19 +213,23 @@ app.add_middleware(
 # ============================================================
 # API 라우터 등록
 # ============================================================
+from app.api.admin import router as admin_router
+from app.api.articles import router as articles_router
+from app.api.auth import router as auth_router
 from app.api.feed import router as feed_router
-from app.api.feedback import router as feedback_router
+from app.api.feedback import router as feedback_router, undo_router
+from app.api.subscriptions import router as subscriptions_router
+from app.api.users import router as users_router
 
+app.include_router(auth_router, prefix="/api/auth", tags=["인증"])
+app.include_router(users_router, prefix="/api/users", tags=["사용자"])
 app.include_router(feed_router, prefix="/api", tags=["피드"])
 app.include_router(feedback_router, prefix="/api/articles", tags=["피드백"])
-
-# 4단계에서 구현 예정:
-# from app.api.auth import router as auth_router
-# from app.api.subscriptions import router as subscription_router
-# from app.api.settings import router as settings_router
-# app.include_router(auth_router, prefix="/api/auth", tags=["인증"])
-# app.include_router(subscription_router, prefix="/api/subscriptions", tags=["구독"])
-# app.include_router(settings_router, prefix="/api/settings", tags=["설정"])
+app.include_router(undo_router, prefix="/api/v1/feed", tags=["피드백"])
+app.include_router(subscriptions_router, prefix="/api/subscriptions", tags=["구독"])
+# NOTE: articles_router uses /{article_url:path} — must be registered LAST among /api/articles/* routes
+app.include_router(articles_router, prefix="/api/articles", tags=["기사"])
+app.include_router(admin_router, prefix="/api/admin", tags=["관리자"])
 
 
 # ============================================================
@@ -153,19 +252,6 @@ async def health_check(request: Request):
         "service": settings.APP_NAME,
         "redis_connected": redis_ok,
     }
-
-
-# ============================================================
-# 전역 예외 핸들러
-# ============================================================
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """처리되지 않은 예외를 500 응답으로 변환."""
-    if settings.DEBUG:
-        detail = str(exc)
-    else:
-        detail = "서버 내부 오류가 발생했습니다."
-    return JSONResponse(status_code=500, content={"detail": detail})
 
 
 # ============================================================

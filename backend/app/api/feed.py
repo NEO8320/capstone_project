@@ -8,9 +8,11 @@
   - subscription_track: 구독 언론사/기자의 최신 기사 (최대 10건, 피드 상단)
   - recommendation_track: 추천 점수 기반 기사 (점수 내림차순, 피드 하단)
 
-추천 스코어 공식:
-  Score = (임베딩 유사도 × 0.40) + (최신성 × 0.15) + (구독 부스트 × 0.20)
-        + (신뢰도 × 0.15) - (비관심 패널티 × 0.25)
+추천 스코어 공식 (가중치 합계 1.0):
+  base_score = (임베딩 유사도 × 0.40) + (최신성 × 0.20)
+             + (구독 가중치 × 0.20) + (신뢰도 × 0.20)
+  final_score = base_score - (비관심 패널티 × 0.25)
+  구독 기사: final_score × 1.3 (SC-04)
 
 캐싱:
   Redis에 "user:{email}:feed" 키로 5분간 캐싱.
@@ -59,4 +61,7 @@ async def get_feed(
     except RuntimeError:
         redis = None
 
+    # 콜드 스타트 방어는 recommendation 서비스 내부에서 처리.
+    # interest_vector가 None이든 영벡터이든, _build_recommendation_track()이
+    # pgvector 연산을 자동으로 우회하고 credibility+recency 폴백을 반환한다.
     return await get_personalized_feed(user=user, db=db, redis=redis)

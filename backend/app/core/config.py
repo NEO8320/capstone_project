@@ -54,9 +54,19 @@ class Settings(BaseSettings):
 
     # ── APScheduler 크롤링 설정 ──
     CRAWL_INTERVAL_HOURS: int = 1  # 크롤링 주기 (시간)
+    # ★ 카테고리 이름은 config.yaml의 categories 섹션과 완전히 동일한 가운뎃점(·) 형식
+    #   으로 유지해야 한다 (크롤러 → DB → 피드 필터 → 프론트엔드 전 구간 일관성 보장).
     CRAWL_CATEGORIES: list[str] = [
-        "정치", "경제", "사회", "생활/문화", "IT/과학", "세계"
+        "정치", "경제", "사회", "생활·문화", "IT·과학", "세계", "연예", "스포츠",
     ]
+
+    # ── 서버 시작 시 즉시 크롤링 옵션 ──
+    # 서버 가동과 동시에 1회 크롤링을 실행하여 빈 DB 문제를 방지한다.
+    CRAWL_ON_STARTUP: bool = True                # True면 서버 시작 직후 1회 즉시 크롤링
+    AUTO_SEED_ON_EMPTY_DB: bool = True           # 크롤링 전 DB가 비어 있으면 샘플 기사 자동 시드
+    STARTUP_CRAWL_RETRY_ON_ZERO: int = 1         # 즉시 크롤링이 0건이면 60초 후 재시도 횟수
+    DB_INIT_MAX_RETRIES: int = 5                 # init_db() 지수 백오프 최대 시도
+    DB_INIT_INITIAL_DELAY: float = 2.0           # init_db() 첫 재시도 대기 시간 (초)
 
     # ── Rate Limiting 설정 ──
     RATE_LIMIT: str = "60/minute"  # 분당 60회 제한

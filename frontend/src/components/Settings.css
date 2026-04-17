@@ -1,5 +1,5 @@
 /*
- * Settings 컴포넌트 스타일
+ * Settings 컴포넌트 스타일 — 테마 대응
  */
 
 .settings {
@@ -44,13 +44,13 @@
 }
 
 .font-size-btn:hover {
-  border-color: var(--color-link);
+  border-color: var(--color-accent, var(--color-link));
   background: var(--color-bg-secondary);
 }
 
 .font-size-btn--active {
-  border-color: var(--color-link);
-  background: #e8f0fe;
+  border-color: var(--color-accent, var(--color-link));
+  background: var(--color-accent-bg, #e8f0fe);
   font-weight: 600;
 }
 
@@ -65,13 +65,215 @@
 }
 
 .font-size-btn--active .font-size-btn__label {
-  color: var(--color-link);
+  color: var(--color-accent, var(--color-link));
 }
 
 .settings__current {
   margin-top: var(--spacing-md);
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+}
+
+/* ── 계정 정보 ── */
+.settings__profile {
+  margin-top: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.settings__profile-row {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: calc(14px * var(--font-size-multiplier));
+}
+
+.settings__profile-row dt {
+  color: var(--color-text-secondary);
+  min-width: 140px;
+  flex-shrink: 0;
+}
+
+.settings__profile-row dd {
+  color: var(--color-text-primary);
+  font-weight: 500;
+  margin: 0;
+}
+
+/* ── 관심 카테고리 선택기 ── */
+.cat-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.cat-btn {
+  padding: 6px 16px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 20px;
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: calc(14px * var(--font-size-multiplier));
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cat-btn:hover:not(.cat-btn--disabled) {
+  border-color: var(--color-accent, var(--color-link));
+  color: var(--color-accent, var(--color-link));
+}
+
+.cat-btn--active {
+  border-color: var(--color-accent, var(--color-link));
+  background: var(--color-accent, var(--color-link));
+  color: #fff;
+  font-weight: 600;
+}
+
+.cat-btn--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.settings__cat-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--spacing-md);
+}
+
+.settings__cat-count {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.btn-save-cats {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-accent, var(--color-link));
+  color: #fff;
+  font-size: calc(14px * var(--font-size-multiplier));
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-save-cats:hover:not(:disabled) {
+  background: var(--color-accent-hover, var(--color-link));
+}
+
+.btn-save-cats:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── 비밀번호 변경 폼 ── */
+.settings__pw-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  max-width: 360px;
+}
+
+.settings__pw-input {
+  padding: 9px 13px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: calc(14px * var(--font-size-multiplier));
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.settings__pw-input:focus {
+  border-color: var(--color-accent, var(--color-link));
+}
+
+.settings__error {
+  font-size: calc(13px * var(--font-size-multiplier));
+  color: var(--badge-red);
+}
+
+.settings__success {
+  font-size: calc(13px * var(--font-size-multiplier));
+  color: var(--badge-green);
+}
+
+/* ── 테마 설정 섹션 ── */
+.settings__theme-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.theme-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 10px 20px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--card-radius);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: calc(14px * var(--font-size-multiplier));
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.theme-btn:hover {
+  border-color: var(--color-accent, var(--color-link));
+  color: var(--color-accent, var(--color-link));
+}
+
+.theme-btn--active {
+  border-color: var(--color-accent, var(--color-link));
+  background: var(--color-accent-bg, #e8f0fe);
+  color: var(--color-accent, var(--color-link));
+  font-weight: 600;
+}
+
+/* ── 계정 탈퇴 위험 구역 ── */
+.settings__danger-zone {
+  border: 1px solid var(--badge-red);
+  border-radius: var(--card-radius);
+  padding: var(--spacing-lg);
+  background: var(--badge-red-bg);
+}
+
+.settings__danger-title {
+  color: var(--badge-red);
+}
+
+.settings__delete-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  max-width: 360px;
+}
+
+.btn-delete-account {
+  padding: 9px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--badge-red);
+  color: #fff;
+  font-size: calc(14px * var(--font-size-multiplier));
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: opacity 0.15s;
+}
+
+.btn-delete-account:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ── 모바일 대응 ── */
@@ -82,5 +284,9 @@
   .font-size-btn {
     width: 70px;
     padding: var(--spacing-sm);
+  }
+  .settings__profile-row {
+    flex-direction: column;
+    gap: 2px;
   }
 }

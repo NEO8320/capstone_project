@@ -1,6 +1,11 @@
 /*
- * App 전용 스타일 — 네비게이션 버튼
+ * App 전용 스타일 — 네비게이션 버튼 + 테마 대응
  */
+
+.header__title-link {
+  color: inherit;
+  text-decoration: none;
+}
 
 .nav-btn {
   padding: 8px 18px;
@@ -19,12 +24,12 @@
 }
 
 .nav-btn--active {
-  background: var(--color-link);
+  background: var(--color-accent, var(--color-link));
   color: #ffffff;
-  border-color: var(--color-link);
+  border-color: var(--color-accent, var(--color-link));
 }
 
 .nav-btn--active:hover {
-  opacity: 0.9;
+  background: var(--color-accent-hover, var(--color-link));
   color: #ffffff;
 }

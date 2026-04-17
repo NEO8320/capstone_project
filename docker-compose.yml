@@ -11,9 +11,18 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # 컨테이너 준비 상태를 감지할 수 있도록 healthcheck 추가.
+    # backend는 docker-compose 외부에서 실행되므로 실제 레이스 방어는
+    # init_db()의 지수 백오프 재시도 루프가 담당한다 (defense in depth).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d news_curator"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   # ── Redis ──
   redis:
@@ -21,7 +30,7 @@ services:
     container_name: news_curator_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
 

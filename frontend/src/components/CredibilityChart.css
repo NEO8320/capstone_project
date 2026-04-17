@@ -1,0 +1,123 @@
+/*
+ * CredibilityChart — 4-지표 신뢰도 분석 차트 스타일
+ * 테마 변수 기반, 다크/라이트 자동 대응
+ */
+
+.cred-chart {
+  padding: var(--spacing-lg);
+  background: var(--color-bg-elevated, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+}
+
+/* ── 헤더: 제목 + 종합 점수 ── */
+.cred-chart__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-lg);
+}
+
+.cred-chart__title {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.cred-chart__overall {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.cred-chart__score {
+  font-size: calc(28px * var(--font-size-multiplier, 1));
+  font-weight: 800;
+  line-height: 1;
+}
+
+.cred-chart__score--green { color: var(--badge-green); }
+.cred-chart__score--yellow { color: var(--badge-yellow); }
+.cred-chart__score--red { color: var(--badge-red); }
+
+.cred-chart__badge {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: calc(12px * var(--font-size-multiplier, 1));
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.cred-chart__badge--green {
+  color: var(--badge-green);
+  background: var(--badge-green-bg);
+}
+.cred-chart__badge--yellow {
+  color: var(--badge-yellow);
+  background: var(--badge-yellow-bg);
+}
+.cred-chart__badge--red {
+  color: var(--badge-red);
+  background: var(--badge-red-bg);
+}
+
+/* ── 지표 리스트 ── */
+.cred-chart__metrics {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.cred-chart__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 4px var(--spacing-md);
+  align-items: center;
+}
+
+.cred-chart__row-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-xs);
+}
+
+.cred-chart__label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.cred-chart__weight {
+  font-size: calc(11px * var(--font-size-multiplier, 1));
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+
+.cred-chart__bar {
+  grid-column: 1 / 2;
+  height: 8px;
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.cred-chart__bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--color-accent, var(--color-link));
+  transition: width 0.6s ease;
+}
+
+.cred-chart__value {
+  grid-column: 2 / 3;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  min-width: 28px;
+  text-align: right;
+}

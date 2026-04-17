@@ -1,0 +1,206 @@
+/* ArticleDetail 페이지 스타일 */
+
+.article-detail {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+/* ── 뒤로가기 버튼 ── */
+.btn-back {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  font-size: calc(14px * var(--font-size-multiplier));
+  color: var(--color-link);
+  cursor: pointer;
+}
+
+.btn-back:hover {
+  text-decoration: underline;
+}
+
+/* ── 카테고리 + 언론사 헤더 ── */
+.detail__meta-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.detail__category {
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: calc(12px * var(--font-size-multiplier));
+  font-weight: 600;
+  color: var(--color-accent, var(--color-link));
+  background: var(--color-accent-bg, #e8f0fe);
+}
+
+.detail__press {
+  font-size: calc(14px * var(--font-size-multiplier));
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.detail__journalist {
+  font-size: calc(13px * var(--font-size-multiplier));
+  color: var(--color-text-secondary);
+}
+
+.detail__journalist::before {
+  content: '·';
+  margin-right: var(--spacing-xs);
+  color: var(--color-border);
+}
+
+/* ── 발행 시간 ── */
+.detail__date {
+  font-size: calc(13px * var(--font-size-multiplier));
+  color: var(--color-text-secondary);
+  margin-top: calc(-1 * var(--spacing-md));
+}
+
+/* ── 제목 ── */
+.detail__title {
+  font-size: calc(24px * var(--font-size-multiplier));
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+}
+
+/* ── AI 요약 박스 ── */
+.detail__summary-box {
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--color-bg-secondary);
+  border-left: 4px solid var(--color-link);
+  border-radius: 0 var(--card-radius) var(--card-radius) 0;
+}
+
+.detail__summary-label {
+  font-size: calc(13px * var(--font-size-multiplier));
+  font-weight: 600;
+  color: var(--color-link);
+  margin-bottom: var(--spacing-sm);
+}
+
+.detail__summary {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+/* ── 기사 본문 박스 ── */
+.detail__body-box {
+  padding: var(--spacing-lg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-bg-secondary);
+  border-radius: var(--card-radius);
+}
+
+.detail__body-label {
+  font-size: calc(14px * var(--font-size-multiplier));
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 2px solid var(--color-bg-secondary);
+}
+
+.detail__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.detail__body-paragraph {
+  font-size: calc(16px * var(--font-size-multiplier));
+  line-height: 1.8;
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+/* ── 구독 버튼 ── */
+.detail__subscribe-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.btn-subscribe {
+  padding: 8px 18px;
+  border: 1.5px solid var(--color-link);
+  border-radius: 20px;
+  background: var(--color-bg);
+  color: var(--color-link);
+  font-size: calc(14px * var(--font-size-multiplier));
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-subscribe:hover {
+  background: var(--color-accent-bg, #e8f0fe);
+}
+
+.btn-subscribe--active {
+  background: var(--color-link);
+  color: #fff;
+}
+
+.btn-subscribe--active:hover {
+  background: var(--color-accent-hover, #1a56db);
+}
+
+/* ── 하단 액션 ── */
+.detail__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-bg-secondary);
+}
+
+.btn-original {
+  margin-left: auto;
+  padding: 10px 22px;
+  border-radius: 8px;
+  background: var(--color-link);
+  color: #fff;
+  font-size: calc(14px * var(--font-size-multiplier));
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.btn-original:hover {
+  background: var(--color-accent-hover, #1a56db);
+}
+
+.detail__disliked-msg {
+  font-size: calc(13px * var(--font-size-multiplier));
+  color: var(--color-text-secondary);
+}
+
+/* ── 로딩 / 에러 ── */
+.detail-loading,
+.detail-error {
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+/* ── 모바일 ── */
+@media (max-width: 767px) {
+  .article-detail {
+    padding: var(--spacing-md);
+  }
+  .detail__title {
+    font-size: calc(20px * var(--font-size-multiplier));
+  }
+}

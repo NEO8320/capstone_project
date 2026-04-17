@@ -6,6 +6,12 @@
       "runtimeExecutable": "C:/Python312/python.exe",
       "runtimeArgs": ["start_backend.py"],
       "port": 8000
+    },
+    {
+      "name": "Vite Frontend",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["start_frontend.js"],
+      "port": 5173
     }
   ]
 }

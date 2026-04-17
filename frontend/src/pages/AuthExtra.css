@@ -1,0 +1,140 @@
+/* ForgotPassword / ResetPassword 공통 스타일 */
+
+.auth-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-secondary, #f5f5f5);
+  padding: var(--spacing-md, 16px);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--color-bg, #fff);
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: var(--card-radius, 12px);
+  padding: 40px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-title {
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--color-text-primary, #111);
+}
+
+.auth-subtitle {
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--color-text-secondary, #555);
+  margin-top: -8px;
+}
+
+.auth-info {
+  font-size: 14px;
+  color: var(--color-text-secondary, #555);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-field label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary, #111);
+}
+
+.auth-field input {
+  padding: 10px 14px;
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: 8px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.auth-field input:focus {
+  border-color: var(--color-link, #2563eb);
+}
+
+.auth-error {
+  font-size: 13px;
+  color: var(--badge-red, #e53e3e);
+  text-align: center;
+}
+
+.auth-btn {
+  margin-top: 4px;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-link, #2563eb);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.auth-btn:hover:not(:disabled) {
+  background: var(--color-accent-hover, #1a56db);
+}
+
+.auth-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-back-link {
+  display: block;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-link, #2563eb);
+  text-decoration: none;
+}
+
+.auth-back-link:hover {
+  text-decoration: underline;
+}
+
+/* 데모용 재설정 링크 박스 */
+.auth-dev-box {
+  background: var(--badge-yellow-bg, #fef9c3);
+  border: 1px solid var(--badge-yellow, #fbbf24);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-dev-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--badge-yellow, #92400e);
+}
+
+.auth-dev-link {
+  font-size: 13px;
+  color: var(--color-accent, #1d4ed8);
+  word-break: break-all;
+  text-decoration: underline;
+}

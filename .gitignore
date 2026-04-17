@@ -21,3 +21,13 @@ Thumbs.db
 
 # Node (frontend)
 node_modules/
+
+# Backend virtual env & caches
+backend/.venv/
+backend/__pycache__/
+
+# Sensitive files (NEVER commit)
+*.env
+!*.env.example
+backend/.env
+backend/.env.local

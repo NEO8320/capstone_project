@@ -14,12 +14,41 @@
 }
 
 /* 재시도 버튼 */
+/* ── 구독 트랙: 가로 스크롤 ── */
+.card-scroll {
+  display: flex;
+  gap: var(--spacing-md);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.card-scroll > * {
+  flex: 0 0 320px;
+  scroll-snap-align: start;
+}
+
+.card-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.card-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.card-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong, var(--color-border));
+  border-radius: 4px;
+}
+
+/* ── 재시도 버튼 ── */
 .btn-retry {
   margin-top: var(--spacing-md);
   padding: 10px 24px;
   border: none;
   border-radius: 8px;
-  background: var(--color-link);
+  background: var(--color-accent, var(--color-link));
   color: #fff;
   font-size: var(--font-size-sm);
   font-weight: 600;

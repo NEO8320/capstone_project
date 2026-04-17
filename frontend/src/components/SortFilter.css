@@ -1,0 +1,76 @@
+/*
+ * SortFilter 스타일
+ * ==================
+ *
+ * CategoryFilter와 시각적으로 구별되면서도 같은 디자인 시스템을 공유한다:
+ *   - 작은 뱃지형 버튼 (pill shape)
+ *   - 활성 탭: accent 배경 + 흰 글자
+ *   - 비활성 탭: 투명 배경 + 중립 텍스트
+ *
+ * 카테고리 필터 바로 아래에 배치되므로 높이를 조금 낮게 유지한다.
+ */
+
+.sort-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.sort-filter__label {
+  font-size: calc(12px * var(--font-size-multiplier));
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-right: var(--spacing-sm);
+  letter-spacing: 0.5px;
+}
+
+.sort-filter__tab {
+  flex-shrink: 0;
+  padding: 4px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: calc(13px * var(--font-size-multiplier));
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.sort-filter__tab:hover {
+  border-color: var(--color-accent, var(--color-link));
+  color: var(--color-accent, var(--color-link));
+  background: var(--color-accent-bg, rgba(66, 133, 244, 0.08));
+}
+
+.sort-filter__tab--active {
+  background: var(--color-accent, var(--color-link));
+  color: #fff;
+  border-color: var(--color-accent, var(--color-link));
+  font-weight: 600;
+}
+
+.sort-filter__tab--active:hover {
+  background: var(--color-accent-hover, #1a56db);
+  color: #fff;
+}
+
+/* ── 모바일 대응 ── */
+@media (max-width: 767px) {
+  .sort-filter {
+    gap: 4px;
+  }
+  .sort-filter__label {
+    width: 100%;
+    margin-bottom: 4px;
+    margin-right: 0;
+  }
+  .sort-filter__tab {
+    padding: 4px 10px;
+    font-size: calc(12px * var(--font-size-multiplier));
+  }
+}

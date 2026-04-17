@@ -44,7 +44,7 @@
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 6px;
   background: transparent;
-  color: #60a5fa;
+  color: var(--color-accent-hover, #60a5fa);
   font-size: calc(14px * var(--font-size-multiplier));
   font-weight: 600;
   transition: background 0.15s;
@@ -60,6 +60,6 @@
   bottom: 0;
   left: 0;
   height: 3px;
-  background: #60a5fa;
+  background: var(--color-accent-hover, #60a5fa);
   transition: width 0.05s linear;
 }
