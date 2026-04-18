@@ -156,10 +156,23 @@ class GPTService:
     """
 
     @staticmethod
-    async def classify(title: str, summary: str) -> str | None:
+    async def classify(
+        title: str,
+        summary: str,
+        hint_category: str | None = None,
+    ) -> str | None:
         """
         기사 제목 + 3줄 요약 → 카테고리 분류.
         최대 3회 재시도, 지수 백오프 적용. (Task 3)
+
+        Args:
+            title: 기사 제목
+            summary: 3줄 요약
+            hint_category: 크롤러가 수집 시 사용한 카테고리(참고용 힌트).
+                None이 아니면 프롬프트에 포함시켜 GPT의 분류 정확도를 높인다.
+                이는 힌트일 뿐 강제 매칭이 아니며, GPT가 본문을 근거로 다른
+                카테고리를 선택할 수 있다 (과학 기사가 '연예' 키워드에 잡혀도
+                올바르게 IT·과학으로 분류되게 한다).
 
         Returns:
             카테고리 문자열 또는 실패 시 None
@@ -177,8 +190,13 @@ class GPTService:
             print("[CT-02] OPENAI_API_KEY 미설정 — GPT 분류 건너뜀")
             return None
 
-        # 입력 포맷: "기사 제목 [SEP] 3줄 요약"
+        # 입력 포맷: "기사 제목 [SEP] 3줄 요약" + (옵션) 크롤러 섹션 힌트
         input_text = f"{title} [SEP] {summary}"
+        if hint_category:
+            input_text += (
+                f"\n(참고 힌트: 이 기사는 '{hint_category}' 섹션에서 수집되었습니다. "
+                f"내용이 명백히 다른 카테고리라면 내용을 우선하세요.)"
+            )
         prompt = CT02_CLASSIFY_PROMPT.format(input_text=input_text)
 
         for attempt in range(1, MAX_RETRIES + 1):
@@ -225,6 +243,8 @@ async def process_article_with_llm(
     title: str,
     body: str,
     journalist: str | None = None,
+    fallback_category: str = "사회",
+    press: str | None = None,
 ) -> dict | None:
     """
     CT-01 → CT-02 순차 호출 + 규칙 기반 신뢰도 계산.
@@ -245,6 +265,14 @@ async def process_article_with_llm(
         title: 기사 제목
         body: 기사 본문
         journalist: 기자명 (없으면 None)
+        fallback_category: GPT 분류 실패 시 사용할 카테고리.
+            기본값 "사회"지만, 호출부에서 크롤러가 수집한 원본 카테고리
+            (예: "연예", "세계")를 전달하면 사회 쏠림 현상을 막을 수 있다.
+            이 값은 GPT 프롬프트에 '참고 힌트'로도 포함되어 분류 정확도를 높인다.
+        press: 언론사명 (pipeline._extract_press 결과).
+            credibility v2 의 RB-04 3-tier 계산에 사용된다.
+            None 이어도 동작하지만 기자 실명만으로 평가되어 RB-04 가
+            100 또는 25 두 값 중 하나로 제한된다.
 
     Returns:
         {"summary": str, "category": str, "credibility": float,
@@ -261,17 +289,23 @@ async def process_article_with_llm(
         await llm_circuit.record_failure()
         return None
 
-    # ── CT-02: GPT 분류 (CT-01의 요약을 입력으로) ──
-    category = await GPTService.classify(title, summary_text)
+    # ── CT-02: GPT 분류 (CT-01의 요약 + 크롤러 섹션 힌트) ──
+    category = await GPTService.classify(
+        title, summary_text, hint_category=fallback_category,
+    )
 
     if category is None:
-        # GPT 실패 시 기본 카테고리 (파이프라인 중단 방지)
-        category = "사회"
+        # GPT 실패 시 크롤러 원본 카테고리로 폴백
+        # → '사회' 고정 폴백이 세계/연예/스포츠 기사를 흡수하던 버그를 해결
+        category = fallback_category
 
     await llm_circuit.record_success()
 
     # ── 규칙 기반 신뢰도 계산 (결정론적, LLM 의존 없음) ──
-    cred = calculate_credibility(title=title, body=body, journalist=journalist)
+    # press 를 함께 전달하여 RB-04 3-tier 계산을 활성화
+    cred = calculate_credibility(
+        title=title, body=body, journalist=journalist, press=press
+    )
 
     return {
         "summary": summary_text,

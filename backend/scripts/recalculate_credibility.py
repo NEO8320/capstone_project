@@ -54,19 +54,27 @@ async def recalculate_all() -> None:
     updated = 0
 
     async with async_session() as session:
+        # v2 부터 press 컬럼도 함께 fetch - RB-04 3-tier 계산에 필요
         result = await session.execute(
-            select(Article.url, Article.title, Article.body, Article.journalist)
+            select(
+                Article.url,
+                Article.title,
+                Article.body,
+                Article.journalist,
+                Article.press,
+            )
         )
         rows = result.all()
         total = len(rows)
         print(f"[Recalc] 대상 기사 수: {total}건")
 
         for i, row in enumerate(rows, start=1):
-            url, title, body, journalist = row
+            url, title, body, journalist, press = row
             cred = calculate_credibility(
                 title=title or "",
                 body=body or "",
                 journalist=journalist,
+                press=press,
             )
 
             await session.execute(
@@ -88,7 +96,7 @@ async def recalculate_all() -> None:
 
         await session.commit()
 
-    print(f"[Recalc] 완료 — 갱신된 기사: {updated}/{total}")
+    print(f"[Recalc] 완료 - 갱신된 기사: {updated}/{total}")
 
 
 async def summarize_distribution() -> None:
@@ -101,24 +109,36 @@ async def summarize_distribution() -> None:
         print("[Recalc] 분포 계산 대상 없음")
         return
 
-    buckets = {"0-39": 0, "40-59": 0, "60-79": 0, "80-100": 0}
+    # v2 확인용 10단위 버킷 - 50점 수렴이 실제로 해소됐는지 육안 검증
+    buckets = {
+        "0-39": 0, "40-49": 0, "50-59": 0,
+        "60-69": 0, "70-79": 0, "80-89": 0, "90-100": 0,
+    }
     for s in scores:
         if s < 40:
             buckets["0-39"] += 1
+        elif s < 50:
+            buckets["40-49"] += 1
         elif s < 60:
-            buckets["40-59"] += 1
+            buckets["50-59"] += 1
+        elif s < 70:
+            buckets["60-69"] += 1
         elif s < 80:
-            buckets["60-79"] += 1
+            buckets["70-79"] += 1
+        elif s < 90:
+            buckets["80-89"] += 1
         else:
-            buckets["80-100"] += 1
+            buckets["90-100"] += 1
 
-    print("\n[Recalc] 신뢰도 점수 분포")
+    print("\n[Recalc] 신뢰도 점수 분포 (10점 단위)")
     for label, count in buckets.items():
         pct = (count / len(scores)) * 100
         bar = "█" * int(pct / 2)
         print(f"  {label:>7} : {count:>5}건 ({pct:5.1f}%) {bar}")
     print(f"  평균      : {sum(scores)/len(scores):.1f}")
     print(f"  중앙값    : {sorted(scores)[len(scores)//2]:.1f}")
+    print(f"  최솟값    : {min(scores):.1f}")
+    print(f"  최댓값    : {max(scores):.1f}")
 
 
 async def main() -> None:

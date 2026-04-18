@@ -1,22 +1,39 @@
 """
-뉴스 신뢰도 점수 계산기 (결정론적 규칙 기반)
-================================================
+뉴스 신뢰도 점수 계산기 (결정론적 규칙 기반 — v2 연속 스케일)
+==================================================================
 
-LLM(Llama 3)이 신뢰도 서브스코어(RB-01~RB-04)를 안정적으로 산출하지 못해
-대부분의 기사가 50점 근처로 수렴하는 문제가 있었다.
-(원인: LLM이 JSON 스키마를 일부 누락 → `cred.get(..., 50)` 기본값 + `_clamp` fallback 50
-         → 가중합이 45~55점에 집중 → 사용자에게는 "전부 50점"처럼 보임)
+■ 배경 (이 모듈이 존재하는 이유)
+----------------------------------------------------------------
+Llama 3 8B 가 신뢰도 JSON 서브필드(RB-01~04)를 자주 누락·placeholder 처리 하여
+모든 기사 점수가 45~55점에 몰리는 "50점 수렴" 버그가 있었다.
+이를 해결하기 위해 **LLM 의존 없이 동일 입력 → 동일 출력** 을 보장하는
+규칙 기반 계산기로 전환했다.
 
-이 모듈은 LLM 없이도 **같은 입력 → 항상 같은 출력** 을 보장하는 규칙 기반 계산기다.
-모든 산출 근거를 코드로 설명할 수 있고, 재현성·속도·신뢰성이 모두 확보된다.
+■ v1 → v2 의 변경 이유 (2026-04-19)
+----------------------------------------------------------------
+v1 의 계단식(step-function) 테이블은 재현성은 확보했지만
+여전히 점수가 특정 구간(평균 72, 50~59 구간 20%, 85+ 거의 없음)으로
+쏠리는 현상이 있었다. 원인 3가지:
+
+  1. RB-01 이 5단계(100/85/65/45/25) 계단 → 값이 이산점에 몰림
+  2. RB-02 가 짧은 본문(<100자)에 무조건 30점 부여 → 저점 플래토
+  3. RB-04 가 이진(0 / 100) → 언론사·기자 둘 다 없을 땐 0 으로 급락,
+     언론사 OR 기자 OR 둘 다 라는 "중간 수준"을 표현하지 못함
+
+v2 는 아래 원칙으로 재설계했다:
+
+  • 연속(continuous) 스케일 — 가능한 한 선형 사상, 계단 금지
+  • 중간 티어(mid-tier) 확보 — 모든 서브스코어의 바닥값을 20 이상으로 올려
+    "정보 부족" 이 자동으로 50점을 만드는 수렴 현상 억제
+  • 언론사 정보 반영 — RB-04 가 journalist / press 둘을 조합해 3티어
 
 ────────────────────────────────────────────────────────────────
-지표 정의 (가중치 합계 1.00)
+지표 정의 (가중치 합계 1.00, 변경 없음)
 ────────────────────────────────────────────────────────────────
  RB-01 (30%)  문체 중립성   : 감정·선정·과장 어휘의 출현 빈도
  RB-02 (25%)  정보 밀도     : 숫자·날짜·단위·고유명사 등 객관 정보량
  RB-03 (25%)  인용구 존재   : 직접 인용("…"), 간접 인용("…라고 말했다")
- RB-04 (20%)  기자 실명     : 본문 끝 바이라인 존재 여부
+ RB-04 (20%)  출처 명시     : 기자 실명 + 언론사 매칭 (3-tier)
 
  Final = RB01×0.30 + RB02×0.25 + RB03×0.25 + RB04×0.20
 ────────────────────────────────────────────────────────────────
@@ -54,25 +71,27 @@ SENSATIONAL_WORDS: tuple[str, ...] = (
 
 def calculate_rb01_tone(title: str, body: str) -> float:
     """
-    RB-01 문체 중립성: 감정·선정적 어휘가 적을수록 고득점.
+    RB-01 문체 중립성 — **연속 선형 감점**.
 
-    계산 방식:
-      * 제목 + 본문에서 SENSATIONAL_WORDS 단어 출현 횟수(distinct) 계산
-      * 제목에 있는 어휘는 2배 가중 (제목이 자극적일수록 타격 큼)
-
-    점수 테이블:
-      0건       → 100 (완전 중립)
-      1~2건    →  85
-      3~5건    →  65
-      6~10건   →  45
-      11건 이상 →  25
+    설계:
+      * 제목 가중치 2x (자극적 헤드라인에 더 큰 타격)
+      * 연속 공식: score = max(25, 100 - total_hits * 7)
+         - 0회 → 100  (완전 중립)
+         - 1회 →  93
+         - 2회 →  86
+         - 5회 →  65
+         - 8회 →  44
+         - 11회→  23 → 하한 25 로 클램프
+      * 하한 25 를 두는 이유:
+         - 아주 자극적인 기사도 사실 전달이 있을 수 있음
+         - 0점에 몰리면 평균 신뢰도 분포의 왼쪽 꼬리가 얇아져 구분력 상실
 
     Args:
         title: 기사 제목
         body: 기사 본문
 
     Returns:
-        0~100 실수
+        25~100 실수
     """
     title_safe = title or ""
     body_safe = body or ""
@@ -82,16 +101,8 @@ def calculate_rb01_tone(title: str, body: str) -> float:
     body_hits = sum(1 for w in SENSATIONAL_WORDS if w in body_safe)
     total = title_hits + body_hits
 
-    if total == 0:
-        return 100.0
-    elif total <= 2:
-        return 85.0
-    elif total <= 5:
-        return 65.0
-    elif total <= 10:
-        return 45.0
-    else:
-        return 25.0
+    score = 100.0 - total * 7.0
+    return max(25.0, min(100.0, score))
 
 
 # ============================================================
@@ -110,23 +121,29 @@ _RE_UNIT = re.compile(
 
 def calculate_rb02_density(body: str) -> float:
     """
-    RB-02 정보 밀도: 구체적 수치·날짜·단위 정보의 밀도.
+    RB-02 정보 밀도 — **연속 선형**, 짧은 본문에도 합리적 기본점.
 
-    계산 방식:
-      * 본문에서 숫자·날짜·단위 매칭을 모두 세고
-      * 본문 길이(문자수)로 나눠 1000자당 밀도를 구한다
-      * 밀도 5 이상이면 100, 선형 스케일
-
-    짧은 본문(<100자)은 평가가 불안정하므로 30점으로 고정.
+    설계:
+      * 본문이 비었거나 극히 짧은(<80자) 경우:
+          설명 폴백(description)만 들어온 케이스 — 정보 부족이지 거짓은 아님
+          → 55 점 (v1 의 30 은 과도한 감점, 50 수렴의 주요 원인이었음)
+      * 본문이 충분한 경우:
+          entities = 숫자 + 날짜 + 단위 매칭 개수
+          density = (entities / len(body)) * 1000   (1000자당 밀도)
+          score   = 35 + density * 13               (밀도 5 → 100)
+          → 밀도 0 도 35 점 (서술 위주 기사 보호)
+          → 밀도 5 이상이면 100 (수치/날짜 촘촘)
 
     Args:
         body: 기사 본문
 
     Returns:
-        20~100 실수
+        35~100 실수 (짧은 본문 폴백 시 55)
     """
-    if not body or len(body) < 100:
-        return 30.0
+    if not body:
+        return 55.0
+    if len(body) < 80:
+        return 55.0
 
     entities = (
         len(_RE_NUMBER.findall(body))
@@ -135,9 +152,9 @@ def calculate_rb02_density(body: str) -> float:
     )
     density_per_1000 = (entities / len(body)) * 1000
 
-    # 밀도 5 이상 → 100, 0 → 20 (완전 서술문 기사도 아주 낮진 않게)
-    score = 20.0 + density_per_1000 * 16.0
-    return max(20.0, min(100.0, score))
+    # 35 (서술형 기사 바닥) ~ 100 (수치 밀집)
+    score = 35.0 + density_per_1000 * 13.0
+    return max(35.0, min(100.0, score))
 
 
 # ============================================================
@@ -153,51 +170,90 @@ _RE_INDIRECT_QUOTE = re.compile(
 
 def calculate_rb03_quotes(body: str) -> float:
     """
-    RB-03 인용구 존재: 직접 인용 + 간접 인용 개수 기반.
+    RB-03 인용구 존재 — **연속**, 0건도 최소 30 보장.
 
-    점수 테이블:
-      0개    →   0
-      1개    →  55
-      2개    →  75
-      3개    →  90
-      4개 이상→ 100
+    설계:
+      * 0건 → 30  (v1 은 0점이었음 → 경제 지표/단신·분석 기사가 과도하게 감점됨)
+      * 1건 → 60
+      * 2건 → 78
+      * 3건 → 90
+      * 4건 → 96
+      * 5건 이상 → 100
+      * 위 구간 사이는 선형 보간 → 연속성 확보
+
+    왜 0건도 30점:
+      - "삼성전자 2024년 영업이익 8조, 전년比 15% 증가" 같은 기사는
+        인용 없이도 충분히 신뢰할 수 있다. v1 의 0점 부여는 과도했다.
 
     Args:
         body: 기사 본문
 
     Returns:
-        0~100 실수
+        30~100 실수
     """
     if not body:
-        return 0.0
+        return 30.0
 
     direct = len(_RE_DIRECT_QUOTE.findall(body))
     indirect = len(_RE_INDIRECT_QUOTE.findall(body))
     total = direct + indirect
 
-    if total == 0:
-        return 0.0
-    elif total == 1:
-        return 55.0
-    elif total == 2:
-        return 75.0
-    elif total == 3:
-        return 90.0
-    else:
+    # 앵커 포인트 테이블 — 이후 선형 보간
+    # (인용 건수, 점수)
+    anchors = [(0, 30.0), (1, 60.0), (2, 78.0), (3, 90.0), (4, 96.0), (5, 100.0)]
+
+    if total >= 5:
         return 100.0
+
+    # 정수 값이므로 앵커 직접 매칭
+    for n, score in anchors:
+        if total == n:
+            return score
+
+    return 30.0  # defensive (도달 불가)
 
 
 # ============================================================
-# RB-04: 기자 실명
+# RB-04: 출처 명시 — 기자 실명 + 언론사 (3-tier)
 # ============================================================
-def calculate_rb04_journalist(journalist: str | None) -> float:
+def calculate_rb04_journalist(
+    journalist: str | None,
+    press: str | None = None,
+) -> float:
     """
-    RB-04 기자 실명: 바이라인이 존재하면 100, 없으면 0.
-    pipeline._extract_journalist()의 결과를 그대로 사용.
+    RB-04 출처 명시 — **3-tier 연속화**.
+
+    v1 은 기자 실명 유무만 보고 0 또는 100 이진값이었다.
+    → 언론사는 매핑됐으나 기자명 미추출인 기사가 0점 처리되는 문제.
+
+    v2 3-tier:
+      * 기자 실명 + 언론사 매칭  → 100  (완전 출처 확보)
+      * 기자 실명만 또는 언론사만 → 60   (부분 출처)
+      * 둘 다 없음                → 25   (익명 게시 수준)
+
+    press 인자는 pipeline._extract_press() 의 반환을 그대로 전달한다.
+    매핑 실패 시 도메인 문자열("www.example.com")이 들어올 수 있는데,
+    '.' 이 포함되면 매핑 실패로 간주하여 '언론사 없음' 으로 처리한다.
+
+    Args:
+        journalist: 기자명 (없으면 None)
+        press:      언론사명 (pipeline._extract_press 의 반환)
+
+    Returns:
+        25 / 60 / 100 중 하나
     """
-    if journalist and journalist.strip():
+    has_journalist = bool(journalist and journalist.strip())
+
+    # press 가 ".com", ".co.kr" 같은 도메인 문자열이면 매핑 실패
+    has_press = bool(
+        press and press.strip() and "." not in press and press != "Unknown"
+    )
+
+    if has_journalist and has_press:
         return 100.0
-    return 0.0
+    if has_journalist or has_press:
+        return 60.0
+    return 25.0
 
 
 # ============================================================
@@ -207,6 +263,7 @@ def calculate_credibility(
     title: str,
     body: str,
     journalist: str | None = None,
+    press: str | None = None,
 ) -> dict:
     """
     4개 서브스코어 계산 + 가중합 최종 신뢰도 반환.
@@ -218,20 +275,26 @@ def calculate_credibility(
         title:       기사 제목
         body:        기사 본문 (스크래핑된 텍스트 또는 description 폴백)
         journalist:  기자 실명 (없으면 None)
+        press:       언론사명 (pipeline._extract_press 결과, 선택)
 
     Returns:
         {
             "credibility":     float,  # 0~100 최종 점수 (가중합)
-            "rb01_tone":       float,  # 0~100 문체 중립성
-            "rb02_density":    float,  # 20~100 정보 밀도
-            "rb03_quotes":     float,  # 0~100 인용구
-            "rb04_journalist": float,  # 0 or 100 기자 실명
+            "rb01_tone":       float,  # 25~100 문체 중립성
+            "rb02_density":    float,  # 35~100 (짧은 본문 55) 정보 밀도
+            "rb03_quotes":     float,  # 30~100 인용구
+            "rb04_journalist": float,  # 25 / 60 / 100 출처 3-tier
         }
+
+    ■ v2 재설계 후 예상 분포 (v1 대비):
+        v1 : 평균 72, 50~59 구간 20%, 85+ 거의 없음
+        v2 : 평균 78~82, 50~59 구간 <10%, 85+ 15~25%
+        → 프론트 배지(90+ green, 70-89 yellow, <70 red) 구분력 회복
     """
     rb01 = calculate_rb01_tone(title, body)
     rb02 = calculate_rb02_density(body)
     rb03 = calculate_rb03_quotes(body)
-    rb04 = calculate_rb04_journalist(journalist)
+    rb04 = calculate_rb04_journalist(journalist, press)
 
     final = rb01 * 0.30 + rb02 * 0.25 + rb03 * 0.25 + rb04 * 0.20
 

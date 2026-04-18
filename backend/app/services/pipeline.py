@@ -260,14 +260,23 @@ async def _process_single_article(raw: dict) -> bool:
         print(f"[Pipeline] 본문 스크래핑 실패 — description 폴백 사용: {url}")
         body = fallback
 
-    # ── 기자명 추출 (본문 끝부분에서 '기자' 패턴 검색) ──
+    # ── 기자명 / 언론사 추출 ──
+    # 언론사는 credibility v2 의 RB-04 3-tier 계산(기자+언론사 조합)에
+    # 사용되므로 LLM 호출 전에 미리 뽑아둔다.
     journalist = _extract_journalist(body)
+    press = _extract_press(url)
 
     # ── LLM 처리: CT-01(Llama 요약) → CT-02(GPT 분류) 순차 호출 ──
+    # fallback_category: 크롤러가 수집 시 사용한 섹션 카테고리를 전달.
+    # GPT가 분류에 실패하거나 없을 때 '사회' 고정 폴백이 아닌 이 값을 사용하여
+    # 세계/연예/스포츠 기사가 전부 사회로 흡수되는 현상을 방지한다.
+    raw_category = _normalize_category(raw.get("category"))
     llm_result = await process_article_with_llm(
         title=raw["title"],
         body=body,
         journalist=journalist,
+        fallback_category=raw_category,
+        press=press,
     )
 
     if not llm_result:
@@ -275,7 +284,7 @@ async def _process_single_article(raw: dict) -> bool:
         # ★ 카테고리는 반드시 표준 가운뎃점(·) 형식으로 정규화하여 DB 일관성 유지
         fallback_summary = raw.get("description", "요약 없음")
         cred = calculate_credibility(
-            title=raw["title"], body=body, journalist=journalist
+            title=raw["title"], body=body, journalist=journalist, press=press
         )
         llm_result = {
             "summary": fallback_summary,
@@ -312,7 +321,7 @@ async def _process_single_article(raw: dict) -> bool:
             rb02_density=llm_result.get("rb02_density"),
             rb03_quotes=llm_result.get("rb03_quotes"),
             rb04_journalist=llm_result.get("rb04_journalist"),
-            press=_extract_press(url),
+            press=press,
             journalist=journalist,
             published_at=raw.get("pub_date") or datetime.utcnow(),
         ).on_conflict_do_update(
@@ -407,20 +416,23 @@ def create_scheduler():
     _scheduler = AsyncIOScheduler()
 
     # 크롤링 파이프라인을 1시간 주기로 등록
+    #
+    # ■ 첫 실행 타이밍 설계:
+    #   main.py 의 _startup_crawl() 이 서버 기동 직후 1회 즉시 크롤링을 담당한다.
+    #   → 여기서는 next_run_time 을 지정하지 않아 "인터벌 후 최초 실행"(T+1h) 로
+    #     설정되며, startup 크롤과의 더블 실행을 피한다.
+    #   → 결과적으로 사용자 체감: T=0(즉시) → T+1h → T+2h → ... 매시간 자동 크롤.
     _scheduler.add_job(
         run_crawl_pipeline,
         trigger=IntervalTrigger(hours=settings.CRAWL_INTERVAL_HOURS),
         id="crawl_pipeline",
         name="뉴스 기사 수집 파이프라인",
         replace_existing=True,
-        # 서버 시작 직후 첫 실행 (next_run_time=None이면 인터벌 후 첫 실행)
-        # 즉시 실행하려면 아래 주석 해제:
-        # next_run_time=datetime.now(),
     )
 
     print(
         f"[Scheduler] 크롤링 스케줄러 등록 완료 "
-        f"(주기: {settings.CRAWL_INTERVAL_HOURS}시간)"
+        f"(주기: {settings.CRAWL_INTERVAL_HOURS}시간, 첫 실행은 startup 태스크가 담당)"
     )
 
     return _scheduler
