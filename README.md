@@ -207,9 +207,10 @@ docker compose up -d
 # 3) 로컬 LLM 다운로드 (약 4.7GB)
 ollama pull llama3
 
-# 4) 환경 변수 파일 생성
-cp backend/.env.example backend/.env   # 없으면 아래 예시대로 직접 작성
-# backend/.env 를 열어서 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 입력
+# 4) 환경 변수 파일 생성 — API 키는 여기에 들어간다 (상세: §6 참고)
+cp backend/.env.example backend/.env
+# → backend/.env 를 열어서 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, SECRET_KEY 입력
+#    (선택) OPENAI_API_KEY 있으면 함께 입력
 
 # 5) Python 가상환경 + 의존성
 python -m venv .venv
@@ -236,21 +237,76 @@ cd frontend && npm install && cd ..
 
 ## 6. 환경 변수 상세
 
-`backend/.env` 파일을 만들어 다음 값들을 설정한다. `backend/app/core/config.py` 의 `Settings` 가 자동으로 로드한다.
+### 🔑 API 키 삽입 경로 — 이 한 파일만 수정하면 된다
+
+> **파일 경로**: `backend/.env`
+> (저장소에는 **존재하지 않는 파일**. `backend/.env.example` 을 복사해서 직접 만들어야 한다.)
+
+```bash
+# ① 템플릿 복사
+cp backend/.env.example backend/.env         # macOS / Linux
+copy backend\.env.example backend\.env       # Windows CMD
+Copy-Item backend\.env.example backend\.env  # Windows PowerShell
+
+# ② 생성된 backend/.env 파일을 에디터로 열어 값을 채운다
+```
+
+#### 어떤 키를 어디에 넣는가
+
+생성된 `backend/.env` 파일에서 아래 줄들의 **등호(=) 오른쪽**에만 값을 입력한다. 키 이름(왼쪽)은 절대 바꾸지 말 것.
+
+| 라인 | 키 이름 | 발급처 | 필수? |
+|------|---------|--------|-------|
+| **필수 1** | `NAVER_CLIENT_ID=` | https://developers.naver.com/apps/ (검색 API → 뉴스) | ✅ 필수 |
+| **필수 2** | `NAVER_CLIENT_SECRET=` | 위와 동일 | ✅ 필수 |
+| **필수 3** | `SECRET_KEY=` | `python -c "import secrets; print(secrets.token_hex(32))"` 로 직접 생성 | ✅ 필수 |
+| 선택 4 | `OPENAI_API_KEY=` | https://platform.openai.com/api-keys | 🟡 선택 (있으면 GPT 분류 활성화) |
+| 선택 5 | `ANTHROPIC_API_KEY=` | https://console.anthropic.com | ⚪ 미사용 (비워두기) |
+
+#### 작성 예시
 
 ```ini
-# ─── 필수 ─────────────────────────────────────
-NAVER_CLIENT_ID=네이버_검색_API_클라이언트_ID
-NAVER_CLIENT_SECRET=네이버_검색_API_비밀키
-SECRET_KEY=32바이트_이상의_랜덤_문자열_예: openssl rand -hex 32
+# backend/.env (직접 생성 후 값 채우기)
+
+NAVER_CLIENT_ID=abcDefGhiJklMno12345        ← 네이버 개발자센터에서 복사
+NAVER_CLIENT_SECRET=XYZqrs1234              ← 네이버 개발자센터에서 복사
+SECRET_KEY=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+OPENAI_API_KEY=sk-proj-...                  ← 있으면 입력, 없으면 빈 줄로 두기
+ANTHROPIC_API_KEY=                          ← 비워둠
+```
+
+#### ⚠ 절대 하지 말 것
+
+- ❌ `backend/.env` 를 **git 에 커밋하지 말 것** (이미 `.gitignore` 에 등록됨 — 자동 차단)
+- ❌ `backend/.env.example` 에 실제 키를 넣지 말 것 (이 파일은 공개 저장소에 올라감)
+- ❌ 코드 파일(.py, .js) 에 API 키를 **하드코딩하지 말 것**
+- ❌ Slack/채팅/이슈 등에 키를 붙여넣지 말 것
+
+#### 키가 외부에 노출됐을 때의 처치
+
+1. **즉시** 해당 키를 발급처에서 폐기(Revoke) 하고 새 키 재발급
+2. `git log --all -p -- backend/.env` 로 과거 커밋 이력 확인
+3. 만약 커밋된 적 있다면 `git filter-repo` 로 이력에서 삭제 후 force-push
+
+---
+
+### 전체 환경변수 레퍼런스
+
+`backend/.env` 파일 전체 내용 (템플릿은 `backend/.env.example` 이며 모든 민감값은 공란으로 배포된다):
+
+```ini
+# ─── 필수 (공란일 때 서버 정상 기동 불가) ────────
+NAVER_CLIENT_ID=                # ← 네이버 개발자센터에서 발급 후 여기에 입력
+NAVER_CLIENT_SECRET=            # ← 네이버 개발자센터에서 발급 후 여기에 입력
+SECRET_KEY=                     # ← 32바이트 랜덤 문자열 (secrets.token_hex(32))
 
 # ─── DB / Redis (기본값 그대로 쓰면 docker-compose와 맞음) ─────
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/news_curator
 REDIS_URL=redis://localhost:6379/0
 
-# ─── LLM (있으면 품질 향상, 없어도 동작) ──────────
-OPENAI_API_KEY=sk-...           # 있으면 CT-02 GPT 분류 활성화
-ANTHROPIC_API_KEY=              # 선택 (현재 미사용)
+# ─── LLM (공란이어도 서버 동작, 있으면 품질 향상) ──
+OPENAI_API_KEY=                 # 있으면 CT-02 GPT 분류 활성화 (없으면 섹션 카테고리로 폴백)
+ANTHROPIC_API_KEY=              # 선택 (현재 미사용 — 공란 유지)
 
 # ─── JWT ───────────────────────────────────────
 ALGORITHM=HS256
