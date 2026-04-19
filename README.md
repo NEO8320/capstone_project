@@ -212,6 +212,18 @@ python -m scripts.recalculate_credibility
 
 ## 5. 빠른 시작 (Quick Start)
 
+### 5-A. Windows — 배치 스크립트 권장 경로 (3줄 요약)
+
+```powershell
+git clone https://github.com/NEO8320/capstone_project.git D:\news-curator
+cd D:\news-curator
+.\setup.bat         # 최초 1회: venv + pip + npm + .env 복사
+# → setup.bat 안내에 따라 backend\.env 에 API 키 입력, ollama pull llama3, Docker Desktop 기동
+.\run_all.bat       # 매번 기동
+```
+
+### 5-B. 수동 단계 (macOS/Linux 포함)
+
 ```bash
 # 1) 저장소 클론
 git clone https://github.com/NEO8320/capstone_project.git news-curator
@@ -222,18 +234,19 @@ docker compose up -d
 
 # 3) 로컬 LLM 다운로드 (약 4.7GB)
 ollama pull llama3
+ollama serve &      # 별도 터미널에 상주
 
 # 4) 환경 변수 파일 생성 — API 키는 여기에 들어간다 (상세: §6 참고)
 cp backend/.env.example backend/.env
 # → backend/.env 를 열어서 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET, SECRET_KEY 입력
 #    (선택) OPENAI_API_KEY 있으면 함께 입력
 
-# 5) Python 가상환경 + 의존성
-python -m venv .venv
+# 5) Python 가상환경 + 의존성 (★ venv 경로는 반드시 backend/.venv)
+python -m venv backend/.venv
 # Windows
-.venv\Scripts\activate
+backend\.venv\Scripts\activate
 # macOS/Linux
-source .venv/bin/activate
+source backend/.venv/bin/activate
 
 pip install -r backend/requirements.txt
 
@@ -241,8 +254,11 @@ pip install -r backend/requirements.txt
 cd frontend && npm install && cd ..
 
 # 7) 서버 기동 (개발 모드)
-#    — 백엔드와 프론트엔드를 동시에 띄우는 통합 스크립트
-./run_all.bat      # Windows
+# Windows — 통합 스크립트
+./run_all.bat
+# macOS/Linux — 개별 기동 (2개 터미널)
+#   터미널 A: backend/.venv/bin/python start_backend.py
+#   터미널 B: cd frontend && npm run dev -- --host
 ```
 
 기동 후:
@@ -389,16 +405,29 @@ categories:
 
 ## 7. 실행 방법
 
-### 통합 스크립트 (권장)
+### 통합 스크립트 (권장) — `setup.bat` 후 `run_all.bat`
 
-```bash
-./run_all.bat
+**처음 이식한 환경이라면 반드시 순서대로 실행한다:**
+
+```powershell
+cd D:\news-curator
+
+# ① 최초 1회 (venv 생성 + 의존성 설치 + .env 복사)
+.\setup.bat
+
+# ② 매번 서비스 기동
+.\run_all.bat
 ```
-내부에서 아래를 순차 실행:
-1. Docker 인프라 기동 확인
-2. Ollama 서비스 헬스 체크
-3. FastAPI 서버 (Uvicorn) 기동 — 포트 8000
-4. Vite 개발 서버 기동 — 포트 5173
+
+`run_all.bat` 가 내부에서 수행하는 작업:
+1. Docker 컨테이너 기동 확인 (`docker-compose up -d`)
+2. Ollama 헬스 체크 (`curl http://localhost:11434/api/tags`)
+3. **가상환경 자동 탐색** — `backend\.venv` 우선, 없으면 `.venv`
+4. `.env` / `node_modules` / 필수 패키지 import 사전 검증
+5. FastAPI 서버 기동 (**새 cmd 창**, 포트 8000, venv python 사용)
+6. Vite 개발 서버 기동 (**새 cmd 창**, 포트 5173)
+
+> 🚨 **중요**: 과거 `run_all.bat` 가 시스템 `python` 을 호출해 `sentence-transformers` 미존재로 인해 크롤링 0건 현상이 있었다. v2 부터는 venv python 을 명시적으로 사용하며, `start_backend.py` 가 가상환경이 아니면 즉시 오류와 함께 종료한다.
 
 ### 개별 실행
 
@@ -413,10 +442,12 @@ ollama serve
 ollama run llama3       # 최초 1회 모델 다운로드
 ```
 
-**백엔드**
-```bash
-cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+**백엔드** (반드시 venv python 으로)
+```powershell
+cd D:\news-curator
+.\backend\.venv\Scripts\python.exe start_backend.py
+# 또는 수동 uvicorn
+.\backend\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --app-dir backend
 ```
 
 **프론트엔드**
@@ -1107,17 +1138,72 @@ docker ps                    # news_curator_db / news_curator_redis 상태 확�
 
 **pgvector 확장**은 docker-compose 의 `pgvector/pgvector:pg16` 이미지에 포함되어 자동 활성화된다. 수동 `CREATE EXTENSION` 불필요.
 
-### 17-9. 통합 실행
+### 17-9. 통합 실행 — `setup.bat` → `run_all.bat`
+
+**처음 이식한 경우 반드시 아래 두 단계를 순서대로 실행한다.**
 
 ```powershell
+cd D:\news-curator
+
+# ① 최초 1회만: 가상환경 생성 + pip install + npm install + .env 복사
+.\setup.bat
+
+# (이때 출력되는 안내에 따라 backend\.env 에 API 키를 입력하고,
+#  ollama pull llama3 및 ollama serve 를 실행한다)
+
+# ② 매번 기동 시: 통합 실행
 .\run_all.bat
 ```
 
-이 배치 스크립트가 다음을 자동으로 수행한다:
-1. Postgres/Redis 컨테이너 기동 확인
-2. 백엔드 서버(FastAPI+Uvicorn) 를 **새 창**에서 기동 — http://localhost:8000
-3. 프런트엔드 Vite 개발 서버를 **새 창**에서 기동 — http://localhost:5173
-4. 기본 브라우저로 http://localhost:5173 자동 열기
+#### `setup.bat` 가 하는 일 (첫 실행 전용)
+| 단계 | 내용 |
+|------|------|
+| 1 | `python --version` 확인 (3.12+ 권장) |
+| 2 | `backend\.venv` 생성 + `pip install -r backend\requirements.txt` |
+| 3 | `frontend\node_modules` 설치 (`npm install`) |
+| 4 | `backend\.env.example` → `backend\.env` 복사 (이미 있으면 스킵) |
+| 5 | 다음 단계(API 키 입력 / Ollama 모델 / Docker 기동) 안내 |
+
+#### `run_all.bat` 가 하는 일 (매번 기동)
+| 단계 | 내용 | 실패 시 |
+|------|------|---------|
+| 0/5 | 사전 확인 체크리스트 출력 | 사용자가 수동 확인 |
+| 1/5 | `docker-compose up -d` (Postgres + Redis) | 오류 메시지 후 종료 |
+| 2/5 | `curl http://localhost:11434/api/tags` 로 Ollama 확인 | Y/N 확인 후 계속 가능 |
+| 3/5 | `backend\.venv\Scripts\python.exe` 존재 확인 + 필수 패키지 import 테스트 + `backend\.env` 존재 확인 + `frontend\node_modules` 확인 | 명확한 복구 명령 출력 후 종료 |
+| 4/5 | **새 cmd 창**에서 `venv python start_backend.py` (FastAPI :8000) | — |
+| 5/5 | **새 cmd 창**에서 `npm run dev --prefix frontend -- --host` (Vite :5173) | — |
+
+> ⚠️ **과거 버그**: 예전 `run_all.bat` 는 `cmd /k "python start_backend.py"` 로 **시스템 `python`** 을 호출했다. 시스템 `python` 에는 `sentence-transformers` 등이 없어서 서버는 뜨지만 **모든 기사 임베딩 생성이 실패해 DB 에 저장되지 않는** 문제가 있었다. v2 부터는 `backend\.venv\Scripts\python.exe` 를 명시적으로 사용하고, `start_backend.py` 내부에서도 가상환경이 아닐 경우 조기 종료한다.
+
+#### 경로 정리
+
+| 파일 | 위치 | 용도 |
+|------|------|------|
+| `run_all.bat` | `D:\news-curator\run_all.bat` | 통합 실행 (매번) |
+| `setup.bat` | `D:\news-curator\setup.bat` | 최초 환경 구축 (1회) |
+| `start_backend.py` | `D:\news-curator\start_backend.py` | 백엔드 래퍼 (venv 검증 포함) |
+| 백엔드 venv python | `D:\news-curator\backend\.venv\Scripts\python.exe` | `run_all.bat` 가 자동 탐색 |
+| 환경변수 파일 | `D:\news-curator\backend\.env` | **여기에만** API 키 입력 |
+| docker-compose | `D:\news-curator\docker-compose.yml` | PG16+pgvector + Redis7 |
+
+### 17-9-b. `run_all.bat` 가 안 될 때의 진단 순서
+
+| 증상 | 원인 | 복구 |
+|------|------|------|
+| "docker 명령을 찾을 수 없습니다" | Docker Desktop 미설치 / PATH 누락 | Docker Desktop 설치 후 재부팅 |
+| "가상환경을 찾을 수 없습니다" | `backend\.venv` 없음 | `.\setup.bat` 실행 |
+| "가상환경에 필수 패키지가 설치되어 있지 않습니다" | `pip install` 생략 | `backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt` |
+| "backend\\.env 가 없습니다" | 복사 안 됨 | `copy backend\.env.example backend\.env` 후 API 키 입력 |
+| "frontend\\node_modules 가 없거나 vite 가 설치되지 않았습니다" | `npm install` 생략 | `cd frontend && npm install` |
+| Ollama 연결 실패 | `ollama serve` 미실행 | 별도 터미널에서 `ollama serve` 상주 |
+| 새 창이 바로 닫힘 | `start_backend.py` 가 `sys.exit(1)` | 닫히기 전에 에러 메시지를 읽고 위 표에 대응 |
+
+> 💡 **디버깅 팁**: 새 cmd 창이 순식간에 닫혀 에러 메시지를 읽을 수 없다면, `run_all.bat` 를 열지 말고 터미널에서 직접 아래 명령을 실행해 로그를 눈으로 확인한다:
+> ```powershell
+> cd D:\news-curator
+> .\backend\.venv\Scripts\python.exe start_backend.py
+> ```
 
 ### 17-10. VSCode 디버깅 설정 (선택)
 
