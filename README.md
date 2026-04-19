@@ -31,6 +31,8 @@
 14. [파일 구조](#14-파일-구조)
 15. [운영 스크립트](#15-운영-스크립트)
 16. [트러블슈팅](#16-트러블슈팅)
+17. [다른 데스크탑으로 이식하기 (VSCode 가이드)](#17-다른-데스크탑으로-이식하기-vscode-가이드)
+18. [Claude Code 프롬프트 템플릿 (다른 데스크탑용)](#18-claude-code-프롬프트-템플릿-다른-데스크탑용)
 
 ---
 
@@ -95,14 +97,28 @@ cd backend
 python -m scripts.recalculate_credibility
 ```
 
-### 🌍 세계·연예·스포츠 기사 공백 해결
+### 🌍 세계·연예·스포츠 기사 공백 해결 (4-layer fix)
 
-네이버 뉴스 검색 API 는 공백으로 구분된 쿼리를 **AND 매칭** 으로 처리한다. 이전에 `"연예 아이돌 드라마"` 같은 3단어 쿼리로 검색 결과 집합이 너무 좁아져 세계/연예/스포츠 카테고리가 DB 에 **각 1건** 만 존재하는 문제가 있었다.
+네이버 뉴스 검색 API 는 공백으로 구분된 쿼리를 **AND 매칭** 으로 처리한다. 이전에 `"연예 아이돌 드라마"` 같은 3단어 쿼리로 검색 결과 집합이 너무 좁아지고, 이어서 GPT 재분류가 세계/연예 섹션 기사를 '사회'/'경제' 로 흘려보내고, 마지막으로 파이프라인 교착 버그까지 겹쳐 해당 카테고리가 **DB 에 각 1건(시드)만** 존재하는 문제가 있었다.
 
-**수정**:
-- `crawler.py` 의 `CATEGORY_KEYWORDS` 를 1~2 단어 핵심어로 축소 (예: `"세계" → "국제"`)
-- `llm_processor.py` 의 GPT 분류 실패 시 고정 '사회' 폴백을 **크롤러 섹션 카테고리로 폴백** 으로 교체
-- GPT 프롬프트에 섹션 힌트를 포함 (분류 정확도 향상)
+**수정 (4층 방어)**:
+1. **`crawler.py`** — `CATEGORY_KEYWORDS` 를 1~2 단어 핵심어로 축소하고 노이즈 키워드를 교체 (`"국제" → "해외"`, `"연예" → "연예인"`) — 네이버 API 의 AND 매칭에서 실제 해외/연예 기사가 잡히도록.
+2. **`llm_processor.py`** — GPT 분류 프롬프트에 섹션 힌트를 강하게 편향 (`"기본 분류를 힌트 카테고리로 하되, 완전히 무관할 때만 재분류"`) + 실패 시 고정 '사회' 폴백을 **크롤러 섹션 카테고리 폴백** 으로 교체.
+3. **`pipeline.py` (Sticky)** — 크롤러가 세계/연예/스포츠 섹션에서 가져온 기사는 GPT 재분류 결과를 무시하고 **크롤러 힌트 카테고리를 유지** (`STICKY_CRAWLER_CATEGORIES`). GPT 가 '연예인 골프 경기' 를 '스포츠' 로 바꿔서 연예 버킷이 비는 현상을 막는다.
+4. **`pipeline.py` (Deadlock)** — 과거 `back_pressure.increment(len(new_articles))` 로 배치 전체(예: 239 건) 를 한꺼번에 큐에 등록한 뒤 `wait_if_paused()` 가 pause_threshold(100) 초과 상태에서 영원히 대기 → `decrement` 는 처리 완료 후 호출되므로 **서버 기동 직후 크롤링이 1 건도 진입하지 못하는 교착** 이 있었다. increment/decrement 를 per-item 으로 옮겨 큐를 1 이하로 유지하도록 수정.
+
+**실측 결과** (수정 전 → 수정 후, 단일 크롤링 회차):
+
+| 카테고리 | Before | After |
+|----------|--------|-------|
+| 세계 | 1 (시드) | 5+ |
+| 연예 | 1 (시드) | 2+ |
+| 스포츠 | 1 (시드) | 2+ |
+
+### 🧰 파이프라인 교착(Backpressure) 버그 수정
+
+증상: "서버를 재시작해도 크롤링이 진행되지 않음". 원인은 위 §2 의 4번 항목과 동일.
+`pipeline.py` 의 개별 기사 처리 루프에서 backpressure 를 **per-item increment** 로 바꿔 순차 처리 의미론을 지키도록 수정하였다 (순차 루프는 queue 크기 ≤ 1 을 보장하므로 `wait_if_paused` 는 사실상 no-op 이 된다).
 
 ### ⏱ 서버 기동 시 자동 크롤링 + 1시간 간격 스케줄
 
@@ -979,6 +995,179 @@ npx update-browserslist-db@latest
 
 ---
 
+## 17. 다른 데스크탑으로 이식하기 (VSCode 가이드)
+
+이 섹션은 **다른 데스크탑에서 이 프로젝트를 그대로 받아 VSCode 로 개발/실행**하려는 경우의 완전한 가이드다. 순서대로 따라가면 `run_all.bat` 한 번 실행만으로 전체 서비스가 기동된다.
+
+### 17-1. 대상 환경 전제
+
+| 항목 | 최소/권장 |
+|------|-----------|
+| OS | Windows 10/11 (64-bit). macOS/Linux 는 경로 구분만 바꾸면 동일 절차 |
+| CPU/RAM | 4-core 이상, 16 GB RAM 이상 (Llama 3 로컬 실행 시 RAM 8 GB 여유 필요) |
+| 디스크 | 15 GB 이상 여유 (Ollama 모델 4.7 GB + venv + 노드 모듈 + DB 볼륨) |
+| 네트워크 | 네이버 뉴스 API + OpenAI API + Anthropic API (선택) 아웃바운드 허용 |
+
+### 17-2. 사전 설치 (한 번만)
+
+아래 5 종을 모두 설치한다. 모두 **공식 인스톨러** 사용 권장.
+
+| 소프트웨어 | 설치 링크 | 확인 명령 |
+|-----------|----------|-----------|
+| **Git for Windows** | https://git-scm.com/download/win | `git --version` |
+| **Python 3.12.x** | https://www.python.org/downloads/ (설치 시 *Add to PATH* 체크) | `python --version` |
+| **Node.js 20 LTS** | https://nodejs.org/ | `node --version && npm --version` |
+| **Docker Desktop** | https://www.docker.com/products/docker-desktop/ (WSL2 backend 권장) | `docker --version` |
+| **Ollama** | https://ollama.com/download | `ollama --version` |
+| **VSCode** | https://code.visualstudio.com/ | (GUI) |
+
+**VSCode 권장 확장**:
+- `ms-python.python` — Python 언어 서버
+- `ms-python.vscode-pylance` — 타입 체크
+- `dbaeumer.vscode-eslint` — 프런트엔드 린터
+- `esbenp.prettier-vscode` — 코드 포맷
+- `ms-azuretools.vscode-docker` — 컨테이너 관리
+- `Anthropic.claude-code` — **Claude Code** (본 프로젝트 유지보수용)
+
+### 17-3. 리포지토리 클론
+
+```powershell
+# PowerShell 또는 Git Bash
+cd D:\          # 원하는 작업 폴더로
+git clone https://github.com/NEO8320/capstone_project.git news-curator
+cd news-curator
+code .          # VSCode 로 열기
+```
+
+> ⚠️ 경로에 한글/공백이 있으면 일부 빌드 도구에서 실패한다. `D:\news-curator` 처럼 ASCII 단일 단어 경로 권장.
+
+### 17-4. Python 가상환경 (backend)
+
+VSCode 터미널(`Ctrl+` ` ` `)에서:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1     # PowerShell
+# 또는  .\.venv\Scripts\activate.bat  (cmd.exe)
+
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+VSCode 가 `.venv` 를 자동 감지하지 못하면:
+1. `Ctrl+Shift+P` → `Python: Select Interpreter`
+2. `./backend/.venv/Scripts/python.exe` 선택
+
+**중요**: `sentence-transformers` 는 첫 실행 시 Ko-SBERT 모델(≈ 500 MB)을 Hugging Face 에서 다운로드한다. 방화벽이 차단하면 `HF_HUB_OFFLINE` 이슈가 날 수 있으므로 초회는 온라인 환경에서 실행하자.
+
+### 17-5. 프런트엔드 의존성
+
+```powershell
+cd ..\frontend
+npm install      # 2~3 분 소요
+```
+
+### 17-6. 환경 변수 파일 준비 — **API 키 여기에 입력**
+
+```powershell
+cd ..\backend
+copy .env.example .env          # Windows
+# cp .env.example .env           # macOS/Linux
+```
+
+그 뒤 VSCode 에서 `backend/.env` 를 열어 다음 4개 키의 **값 부분만** 채운다.
+
+| 키 | 발급처 | 필수 여부 |
+|----|--------|-----------|
+| `SECRET_KEY` | `python -c "import secrets; print(secrets.token_hex(32))"` 결과 붙여넣기 | ✅ 필수 (미설정 시 서버 기동 불가) |
+| `NAVER_CLIENT_ID` | https://developers.naver.com/apps/ → 애플리케이션 등록 → 검색(뉴스) | ✅ 필수 |
+| `NAVER_CLIENT_SECRET` | 위와 동일 | ✅ 필수 |
+| `OPENAI_API_KEY` | https://platform.openai.com/api-keys | ⚠️ 선택 (없으면 CT-02 가 크롤러 섹션으로 자동 폴백) |
+| `ANTHROPIC_API_KEY` | https://console.anthropic.com/ | ❌ 현재 미사용 |
+
+> 📌 **API 키는 `backend/.env` 외의 어떤 파일에도 쓰지 말 것.** `.env` 는 `.gitignore` 에 포함되어 커밋되지 않는다.
+
+### 17-7. Ollama 로컬 LLM 준비
+
+```powershell
+ollama pull llama3          # 4.7 GB, 첫 실행 1회만
+ollama serve                # 별도 터미널에서 상주 (기본: http://localhost:11434)
+```
+
+GPU 가 있으면 자동 활용된다. CPU-only 환경에서도 동작하지만 요약 1건당 4-8초 소요.
+
+### 17-8. Docker (Postgres + Redis) 기동
+
+```powershell
+cd D:\news-curator
+docker-compose up -d         # 2개 컨테이너 기동
+docker ps                    # news_curator_db / news_curator_redis 상태 확인
+```
+
+**pgvector 확장**은 docker-compose 의 `pgvector/pgvector:pg16` 이미지에 포함되어 자동 활성화된다. 수동 `CREATE EXTENSION` 불필요.
+
+### 17-9. 통합 실행
+
+```powershell
+.\run_all.bat
+```
+
+이 배치 스크립트가 다음을 자동으로 수행한다:
+1. Postgres/Redis 컨테이너 기동 확인
+2. 백엔드 서버(FastAPI+Uvicorn) 를 **새 창**에서 기동 — http://localhost:8000
+3. 프런트엔드 Vite 개발 서버를 **새 창**에서 기동 — http://localhost:5173
+4. 기본 브라우저로 http://localhost:5173 자동 열기
+
+### 17-10. VSCode 디버깅 설정 (선택)
+
+`.vscode/launch.json` 에 다음을 추가하면 백엔드를 디버거로 기동할 수 있다:
+
+```jsonc
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FastAPI (debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "app.main:app",
+        "--reload",
+        "--host", "0.0.0.0",
+        "--port", "8000"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "env": { "PYTHONIOENCODING": "utf-8" },
+      "justMyCode": false
+    }
+  ]
+}
+```
+
+### 17-11. 흔히 겪는 이식 문제
+
+| 증상 | 원인 | 해결 |
+|------|------|------|
+| `ModuleNotFoundError: No module named 'sentence_transformers'` | VSCode 터미널이 시스템 Python 을 사용 중 | `Ctrl+Shift+P` → Select Interpreter → `backend/.venv` |
+| `ConnectionRefusedError (5432)` | Docker Desktop 미기동 또는 컨테이너 중단 | `docker-compose up -d` |
+| `ollama: connection refused` | `ollama serve` 미실행 | 별도 터미널에서 `ollama serve` 상주 |
+| 네이버 API 401 | `.env` 의 CLIENT_ID/SECRET 오타 또는 애플리케이션에서 **검색(뉴스)** 권한 누락 | https://developers.naver.com/apps/ 에서 "검색" API 추가 |
+| 한글 콘솔 깨짐 (`cp949`) | Windows 기본 콘솔 인코딩 | 터미널에서 `$env:PYTHONIOENCODING="utf-8"` 또는 전역 시스템 변수 설정 |
+| Vite `EADDRINUSE: 5173` | 이전 프런트엔드 프로세스가 살아 있음 | `netstat -ano \| findstr 5173` → `taskkill /F /PID <pid>` |
+
+### 17-12. 이식 체크리스트 (5분 스모크 테스트)
+
+1. ✅ `http://localhost:8000/docs` 열려서 FastAPI Swagger 가 뜬다
+2. ✅ `http://localhost:5173` 에서 로그인 화면이 뜬다
+3. ✅ 신규 가입 → 관심 카테고리 선택 → 피드에 기사가 나온다
+4. ✅ `docker exec news_curator_db psql -U postgres -d news_curator -c "SELECT category, COUNT(*) FROM articles GROUP BY category;"` 에서 8개 카테고리 전부 0 보다 많다
+5. ✅ 백엔드 로그에 `[Pipeline] 기사 수집 파이프라인 완료` 메시지가 기동 ~1분 내에 찍힌다
+
+---
+
 ## 라이선스 / 크레딧
 
 - **백엔드 프레임워크**: FastAPI (MIT)
@@ -992,3 +1181,118 @@ npx update-browserslist-db@latest
 ---
 
 **문의 / 기여**: GitHub Issues / Pull Requests 환영합니다.
+
+---
+
+## 18. Claude Code 프롬프트 템플릿 (다른 데스크탑용)
+
+다른 데스크탑에서 이 프로젝트를 `git clone` 한 뒤 **Claude Code (Anthropic)** 로 개발을 이어가려는 경우, 아래 프롬프트 3 종을 순서대로 던지면 Claude 가 프로젝트 구조를 자동으로 파악하고 작업할 수 있는 상태가 된다.
+
+> 💡 **사용법**
+> 1. VSCode 에서 `Claude Code` 확장을 설치하고 로그인한다.
+> 2. 프로젝트 루트(`D:\news-curator`)에서 Claude Code 세션을 연다.
+> 3. 아래 **① 부트스트랩 프롬프트**를 붙여넣어 환경을 일으킨다.
+> 4. 필요에 따라 **② 점검 프롬프트** 또는 **③ 개발 작업 프롬프트**를 사용한다.
+
+---
+
+### ① 부트스트랩 프롬프트 — 새 데스크탑 최초 1회 실행
+
+```text
+이 리포지토리는 https://github.com/NEO8320/capstone_project 에서 clone 한
+News Curator 프로젝트이다. 다른 데스크탑에서 개발을 이어가려 하니, 아래 작업을
+순서대로 수행해 달라. 실패하는 단계는 원인을 설명하고 해결책을 제시하되,
+내 확인 없이 .env 를 수정하거나 git 커밋을 만들지 말 것.
+
+작업 순서:
+1. README.md 의 §4 (사전 설치 요구사항) 과 §17 (이식 가이드) 을 읽고 현재
+   호스트에 누락된 도구(Python 3.12, Node 20, Docker Desktop, Ollama) 가
+   있는지 `git --version`, `python --version`, `node --version`,
+   `docker --version`, `ollama --version` 로 확인만 해 달라. 없는 것은 목록으로
+   보고.
+
+2. backend/.venv 가 없으면 `python -m venv backend/.venv` 로 생성한 뒤
+   `backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt`
+   로 의존성을 설치한다. 이미 있으면 그대로 두고 현재 설치 상태만 보고.
+
+3. frontend/node_modules 가 없으면 `npm install --prefix frontend` 실행.
+
+4. backend/.env 가 없으면 `.env.example` 을 복사만 하고, **키 값은 비워
+   놓은 채 나에게 어떤 키를 어디서 발급받아 넣어야 하는지 표로 알려 줘라.**
+   이미 .env 가 있으면 비어있는 필수 키만 목록화해서 보고.
+
+5. Docker Desktop 이 실행 중이면 `docker-compose up -d` 를 제안(실제 실행
+   여부는 내가 결정)하고, Postgres/Redis 컨테이너 상태를 docker ps 로 출력.
+
+6. 마지막으로 "다음 할 일" 을 아래 기준으로 제안해 달라:
+   - .env 값을 채워야 하면 § 6 표 기준으로 어떤 키가 비어 있는지
+   - Ollama 에 llama3 가 pull 되어있지 않으면 `ollama pull llama3` 안내
+   - 모든 준비가 끝났다면 `run_all.bat` 실행 안내
+
+보고 형식: 체크리스트(✅/❌) + 누락된 항목만 짧게 이유 설명.
+```
+
+---
+
+### ② 상태 점검 프롬프트 — 매일 작업 시작 전
+
+```text
+news-curator 프로젝트의 현재 상태를 아래 5가지 관점으로 점검하고 짧게 보고해 줘.
+파일을 수정하거나 커밋하지는 말 것.
+
+1. git status — 변경/미커밋 파일 목록 (있으면 summary)
+2. docker ps — news_curator_db / news_curator_redis 기동 여부
+3. backend/.venv/Scripts/python.exe -c "import sentence_transformers, openai, httpx, sqlalchemy; print('OK')"
+   로 핵심 의존성 import 성공 여부
+4. DB 카테고리 분포 — 아래 SQL 을 docker exec 로 실행한 결과:
+   SELECT category, COUNT(*) FROM articles GROUP BY category ORDER BY category;
+   (세계/연예/스포츠 가 각 5건 미만이면 경고)
+5. 최근 크롤링 로그 (D:\news-curator\crawl_run.log 존재 시 마지막 20줄)
+
+형식: 5개 섹션 bullet, 각 섹션 3줄 이내.
+```
+
+---
+
+### ③ 개발 작업 프롬프트 — 기능 추가/버그 수정 요청할 때
+
+```text
+[작업 내용]
+<여기에 구체적인 요구사항을 한국어로 작성>
+(예: "추천 피드에서 최근 7일 이내 기사만 노출되도록 필터를 추가하고
+싶다. backend/app/services/recommendation.py 에 조건을 넣고, 프런트엔드
+필터 UI 는 건드리지 말 것.")
+
+[작업 제약]
+- 파일 변경 전 반드시 Read 로 현재 내용을 확인할 것
+- 수정 후 `backend/.venv/Scripts/python.exe -m py_compile <변경파일>`
+  으로 문법 검증할 것
+- 프런트엔드를 수정했다면 `npm run build --prefix frontend` 로 빌드
+  성공 확인할 것
+- git 커밋은 내가 확인한 뒤 "커밋해" 라고 할 때만 할 것
+- README.md 의 `## 2. 최근 업데이트` 섹션에 한 줄 추가할 것
+- .env / settings.local.json / API 키 파일은 절대 건드리지 말 것
+
+[완료 보고 형식]
+1. 변경된 파일 목록 (경로 + 변경 요약)
+2. 검증 결과 (py_compile / npm build 로그 요약)
+3. 검토가 필요한 트레이드오프 (성능/보안/UX 측면)
+```
+
+---
+
+### 참고: Claude Code CLI 단축 명령 예시
+
+VSCode 외에 **CLI 로** Claude Code 를 실행하는 경우, 위 프롬프트를 파일로 저장해
+두고 입력으로 넘기면 편하다:
+
+```powershell
+# PowerShell
+claude-code --prompt-file .claude\prompts\bootstrap.md
+claude-code --prompt-file .claude\prompts\daily-check.md
+```
+
+프롬프트를 수정/확장할 때마다 `.claude/prompts/` 에 커밋해 두면 팀 전원이 동일한
+에이전트 컨텍스트로 작업할 수 있다.
+
+---

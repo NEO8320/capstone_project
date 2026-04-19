@@ -54,6 +54,14 @@ from app.services.resilience import (
 # ── 백프레셔 컨트롤러 (모듈 레벨 싱글턴) ──
 back_pressure = BackPressureController(pause_threshold=100, resume_threshold=50)
 
+# ── "고정 카테고리" — GPT 재분류에도 크롤러 섹션을 유지하는 카테고리 ──
+# ★ 2026-04-19 추가: 세계/연예/스포츠는 네이버 검색 API 에서 비-카테고리 기사가
+#   섞여 들어오고, GPT 가 본문 근거로 재분류하면서 DB 버킷이 비어버리는 현상
+#   이 있었다. 이 카테고리들은 크롤러 섹션을 "권위 있는" 분류로 유지하여
+#   최소 개수를 보장한다. GPT 가 이외 6개 카테고리로 재분류한 경우에는
+#   크롤러 힌트를 우선시한다.
+STICKY_CRAWLER_CATEGORIES = frozenset({"세계", "연예", "스포츠"})
+
 
 # ============================================================
 # 카테고리 정규화 (LLM 실패 시 폴백 방어)
@@ -175,14 +183,23 @@ async def run_crawl_pipeline():
     print(f"[Pipeline] 중복 {dup_count}건 제외, 신규 {len(new_articles)}건 처리 시작...")
 
     # ── Step 4: 개별 기사 처리 ──
-    # 백프레셔에 신규 건수만 등록
-    await back_pressure.increment(len(new_articles))
-
+    # ★ 2026-04-19 Deadlock 수정:
+    #   과거 코드는 배치 전체(예: 239건)를 `increment()` 로 한꺼번에 큐에 등록한 뒤
+    #   `wait_if_paused()` 로 대기했다. pause_threshold(100) 를 초과하면 즉시
+    #   _is_paused=True 로 고정되는데, decrement 는 _process_single_article 가
+    #   끝나야 호출되므로 루프가 영원히 진입하지 못하는 교착(deadlock) 이 발생했다.
+    #   → 원인: 서버 기동 후 아무 기사도 DB 에 들어오지 않고 '세계/연예/스포츠' 버킷 공백.
+    #
+    #   이 루프는 본래 순차 처리(1건 = 최대 큐 크기 1) 이므로 backpressure 대상이
+    #   아니다. increment/decrement 를 per-item 으로 옮겨 큐를 1 이하로 유지하고
+    #   wait_if_paused 는 실질적 no-op 으로 남긴다 (지표/로깅 목적).
     processed_count = 0
     skipped_count = 0
 
     for raw in new_articles:
-        # 백프레셔 확인 — 대기큐 초과 시 재개될 때까지 대기
+        # 백프레셔 카운트를 먼저 증가 (per-item). 순차 처리이므로 queue 는 1 까지만 찬다.
+        await back_pressure.increment(1)
+        # 외부(어드민 등) 트리거로 pause 가 걸려 있다면 그때만 대기.
         await back_pressure.wait_if_paused()
 
         try:
@@ -195,7 +212,7 @@ async def run_crawl_pipeline():
             print(f"[Pipeline] 기사 처리 중 오류: {e}")
             skipped_count += 1
         finally:
-            # 처리 완료 → 백프레셔 카운트 감소
+            # 처리 완료 → 백프레셔 카운트 감소 (queue 가 0 으로 복귀)
             await back_pressure.decrement()
 
     # ── Redis 캐시 무효화: 새 기사가 즉시 피드에 반영되도록 (Task 4) ──
@@ -298,6 +315,20 @@ async def _process_single_article(raw: dict) -> bool:
     else:
         # LLM 성공 경로에서도 혹시 모를 변형(슬래시/유사표현)을 한번 더 정규화
         llm_result["category"] = _normalize_category(llm_result.get("category"))
+
+        # ★ Sticky Category 안전망 (2026-04-19):
+        #   크롤러가 세계/연예/스포츠 섹션에서 가져온 기사를 GPT 가
+        #   다른 카테고리로 재분류한 경우, 크롤러 힌트를 유지한다.
+        #   → 해당 카테고리 버킷이 0건으로 비는 현상 방지
+        if (
+            raw_category in STICKY_CRAWLER_CATEGORIES
+            and llm_result["category"] != raw_category
+        ):
+            print(
+                f"[Pipeline] Sticky 카테고리: GPT 재분류 '{llm_result['category']}' "
+                f"→ 크롤러 힌트 '{raw_category}' 유지 ({url[:60]}...)"
+            )
+            llm_result["category"] = raw_category
 
     # ── Ko-SBERT 임베딩 생성 (512 토큰 제한: '제목+요약'만 사용, Task 4) ──
     try:
