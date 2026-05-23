@@ -14,6 +14,15 @@ News Curator — 백엔드 기동 래퍼 스크립트
 
 from __future__ import annotations
 
+import sys as _sys
+# Windows cp949 환경에서 UnicodeEncodeError 방지 - 어떤 실행 경로든 보장
+if _sys.platform == "win32":
+    try:
+        _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass  # Python <3.7 또는 stdout 비표준 시 무시
+
 import os
 import sys
 from pathlib import Path

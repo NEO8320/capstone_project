@@ -38,6 +38,7 @@ router = APIRouter()
 @limiter.limit(settings.RATE_LIMIT)
 async def get_feed(
     request: Request,
+    category: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -64,4 +65,9 @@ async def get_feed(
     # 콜드 스타트 방어는 recommendation 서비스 내부에서 처리.
     # interest_vector가 None이든 영벡터이든, _build_recommendation_track()이
     # pgvector 연산을 자동으로 우회하고 credibility+recency 폴백을 반환한다.
-    return await get_personalized_feed(user=user, db=db, redis=redis)
+    #
+    # category 가 지정되면(특정 탭 클릭 시) 추천 트랙을 해당 카테고리로
+    # DB 레벨에서 필터링한다. None('전체' 탭)이면 전체 카테고리에서 추천.
+    # 카테고리명 정규화: 프론트가 보내는 표준 가운뎃점(·) 형식 그대로 사용.
+    category = (category or "").strip() or None
+    return await get_personalized_feed(user=user, db=db, redis=redis, category=category)

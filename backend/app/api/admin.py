@@ -190,7 +190,7 @@ async def seed_sample_articles_if_empty(db: AsyncSession) -> int:
     if existing_count and existing_count > 0:
         return 0
 
-    print(f"[Seed] DB가 비어있음 — {len(SAMPLE_ARTICLES)}개 샘플 기사 삽입 시작")
+    print(f"[Seed] DB가 비어있음 - {len(SAMPLE_ARTICLES)}개 샘플 기사 삽입 시작")
     now = datetime.now(timezone.utc)
     inserted = 0
 

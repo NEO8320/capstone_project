@@ -60,7 +60,30 @@ export default function Register() {
         name: form.name,
         interest_categories: selectedCategories,
       }, { timeout: 60000 }); // 60초 — 첫 실행 시 모델 다운로드 시간 고려
-      navigate('/login', { state: { registered: true } });
+
+      // ── 가입 성공 직후 자동 로그인 → /feed 직행 (UX 개선) ──
+      // 이전엔 /login 으로 리다이렉트해 사용자가 이메일/비번을 다시 입력해야 했음.
+      // 이제 동일한 자격증명으로 즉시 로그인 시도 후, 성공하면 토큰 저장 → /feed.
+      // 자동 로그인 실패 시(드물) 안전망으로 /login 페이지에 성공 메시지 전달.
+      try {
+        const loginResp = await axios.post('/api/auth/login', {
+          email: form.email,
+          password: form.password,
+        }, { timeout: 10000 });
+        const { access_token, refresh_token } = loginResp.data || {};
+        if (access_token) {
+          localStorage.setItem('access_token', access_token);
+          if (refresh_token) localStorage.setItem('refresh_token', refresh_token);
+          navigate('/feed', { replace: true });
+          return;
+        }
+        // 토큰 누락 시 안전 폴백
+        navigate('/login', { state: { registered: true, email: form.email } });
+      } catch (loginErr) {
+        // 자동 로그인 실패는 치명적이지 않음. 사용자에게 명시적 로그인 유도.
+        console.warn('[Register] 자동 로그인 실패:', loginErr);
+        navigate('/login', { state: { registered: true, email: form.email } });
+      }
     } catch (err) {
       const detail = err.response?.data?.detail;
       setError(detail || '회원가입에 실패했습니다. 다시 시도해 주세요.');

@@ -4,8 +4,13 @@
 
 import api from './client';
 
-/** GET /feed — 개인화 추천 피드 조회 */
-export const fetchFeed = () => api.get('/feed');
+/** GET /feed — 개인화 추천 피드 조회
+ *  @param {string|null} category - 특정 카테고리 탭 선택 시 해당 카테고리만 서버에서 필터.
+ *                                  '전체'(null/undefined)이면 전체 카테고리 추천. */
+export const fetchFeed = (category) => {
+  const params = category && category !== '전체' ? { category } : {};
+  return api.get('/feed', { params });
+};
 
 /** POST /articles/{url}/read — 기사 읽음 처리 */
 export const markRead = (articleUrl) =>

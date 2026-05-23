@@ -187,7 +187,7 @@ class GPTService:
 
         api_key = settings.OPENAI_API_KEY
         if not api_key:
-            print("[CT-02] OPENAI_API_KEY 미설정 — GPT 분류 건너뜀")
+            print("[CT-02] OPENAI_API_KEY 미설정 - GPT 분류 건너뜀")
             return None
 
         # 입력 포맷: "기사 제목 [SEP] 3줄 요약" + (옵션) 크롤러 섹션 힌트

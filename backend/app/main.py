@@ -10,6 +10,15 @@ FastAPI 애플리케이션 엔트리포인트
   4. 라우터 등록: 피드, 피드백 (3단계), 인증/구독/설정 (4단계 예정)
 """
 
+import sys as _sys
+# Windows cp949 환경에서 UnicodeEncodeError 방지 - 어떤 실행 경로든 보장
+if _sys.platform == "win32":
+    try:
+        _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 import asyncio
 from contextlib import asynccontextmanager
 
@@ -31,6 +40,9 @@ from app.core import redis as redis_module
 # uvicorn --reload 시 자식 프로세스에서 한 번만 실행되도록 하는 모듈 레벨 플래그.
 # 같은 프로세스에서 lifespan이 두 번 호출되어도 중복 크롤링을 방지한다.
 _STARTUP_CRAWL_STARTED = False
+
+# DB 초기화 성공 여부 - /health 엔드포인트에서 보고
+_DB_INIT_OK = False
 
 
 async def _startup_crawl():
@@ -54,7 +66,7 @@ async def _startup_crawl():
     """
     global _STARTUP_CRAWL_STARTED
     if _STARTUP_CRAWL_STARTED:
-        print("[Startup] 즉시 크롤링이 이미 실행됨 — 건너뜀 (reload 재기동 감지)")
+        print("[Startup] 즉시 크롤링이 이미 실행됨 - 건너뜀 (reload 재기동 감지)")
         return
     _STARTUP_CRAWL_STARTED = True
 
@@ -66,7 +78,7 @@ async def _startup_crawl():
         await get_embedding("모델 워밍업")
         print("[Startup] Ko-SBERT 모델 프리로드 완료.")
     except Exception as e:
-        print(f"[Startup] Ko-SBERT 프리로드 실패 — 크롤링 중단: {e}")
+        print(f"[Startup] Ko-SBERT 프리로드 실패 - 크롤링 중단: {e}")
         return  # 임베딩 없이는 크롤링·시드가 모두 실패하므로 중단
 
     # ── Step 2: 빈 DB 자동 시드 ──
@@ -86,7 +98,7 @@ async def _startup_crawl():
 
     # ── Step 3: 실제 크롤링 실행 (재시도 루프) ──
     if not settings.CRAWL_ON_STARTUP:
-        print("[Startup] CRAWL_ON_STARTUP=False — 즉시 크롤링 건너뜀")
+        print("[Startup] CRAWL_ON_STARTUP=False - 즉시 크롤링 건너뜀")
         return
 
     from app.services.pipeline import run_crawl_pipeline_safely
@@ -104,7 +116,7 @@ async def _startup_crawl():
 
         retries_left -= 1
         print(
-            f"[Startup] 크롤링 결과 0건 — 60초 후 재시도 "
+            f"[Startup] 크롤링 결과 0건 - 60초 후 재시도 "
             f"(남은 재시도: {retries_left})"
         )
         await asyncio.sleep(60)
@@ -127,12 +139,37 @@ async def lifespan(app: FastAPI):
       2. APScheduler 정상 종료
     """
     # ── 1. DB 초기화 (재시도 루프, 실패해도 서버는 시작) ──
+    # 모듈 레벨 플래그 - /health 엔드포인트에서 DB 상태 보고용
+    global _DB_INIT_OK
+    _DB_INIT_OK = False
     try:
         print("[Startup] PostgreSQL + pgvector 초기화 중 (재시도 포함)...")
         await init_db()
         print("[Startup] DB 초기화 완료.")
+        _DB_INIT_OK = True
     except Exception as e:
-        print(f"[Startup] DB 초기화 최종 실패 (서버는 계속 시작됨): {e}")
+        # 시각적으로 눈에 띄도록 큰 배너 출력 - 사용자가 백엔드 창에서 즉시 인지 가능
+        banner = (
+            "\n"
+            "##############################################################\n"
+            "#                                                            #\n"
+            "#   [치명적] PostgreSQL DB 연결 실패!                        #\n"
+            "#                                                            #\n"
+            "#   서버는 계속 실행되지만 모든 API 가 500 을 반환합니다.    #\n"
+            "#   프론트엔드에서 \"피드를 불러오는 데 실패\" 가 보일 것입니다.#\n"
+            "#                                                            #\n"
+            "#   해결 방법:                                               #\n"
+            "#   1) Docker Desktop 이 실행 중인지 확인                    #\n"
+            "#   2) docker ps 로 news_curator_db 컨테이너 상태 확인       #\n"
+            "#   3) .\\diagnose.bat 실행으로 정확한 원인 파악             #\n"
+            "#   4) backend\\.env 의 DATABASE_URL 비밀번호가              #\n"
+            "#      docker-compose.yml 의 POSTGRES_PASSWORD 와 일치하는지 #\n"
+            "#                                                            #\n"
+            "##############################################################\n"
+        )
+        print(banner)
+        print(f"[Startup] DB 초기화 최종 실패 (원인): {e}")
+        print("##############################################################\n")
 
     # ── 2. Redis 연결 ──
     try:
@@ -247,9 +284,25 @@ async def health_check(request: Request):
         except Exception:
             redis_ok = False
 
+    # DB 상태도 함께 보고 - 진단 스크립트가 이 응답으로 DB 상태 판별
+    db_ok = False
+    try:
+        from sqlalchemy import text
+        from app.core.database import async_session
+        async with async_session() as session:
+            await session.execute(text("SELECT 1"))
+            db_ok = True
+    except Exception:
+        db_ok = False
+
+    # DB 가 안 되면 status=degraded 로 신호 (200 은 유지하여 health probe 호환)
+    overall = "healthy" if (db_ok and _DB_INIT_OK) else "degraded"
+
     return {
-        "status": "healthy",
+        "status": overall,
         "service": settings.APP_NAME,
+        "db_connected": db_ok,
+        "db_init_ok": _DB_INIT_OK,
         "redis_connected": redis_ok,
     }
 

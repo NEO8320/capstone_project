@@ -4,12 +4,21 @@
 - 모든 민감 정보(DB 비밀번호, API 키 등)는 환경 변수로 관리
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# ── .env 의 절대 경로 ──
+# pydantic-settings 는 env_file 을 cwd 기준 상대경로로 해석하기 때문에,
+# start_backend.py 가 cwd 를 프로젝트 루트로 chdir 하면 backend/.env 를 못 찾는다.
+# 이 모듈 자신의 위치(backend/app/core/config.py) 기준으로 절대경로를 계산하여
+# cwd 와 무관하게 항상 backend/.env 를 로드하도록 한다.
+_ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         case_sensitive=False,
     )

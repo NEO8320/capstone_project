@@ -14,6 +14,11 @@ venv/
 # IDE
 .vscode/
 .idea/
+.claude/
+
+# DB 백업 (대용량, 로컬 전용)
+backups/
+*.dump
 
 # OS
 .DS_Store

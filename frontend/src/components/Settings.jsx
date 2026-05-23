@@ -145,15 +145,32 @@ export default function Settings() {
     }
   };
 
+  const [catError, setCatError] = useState('');
+
   const handleSaveCats = async () => {
-    if (selectedCats.length < 1) return;
+    setCatError('');
+    if (selectedCats.length < 1) {
+      setCatError('관심 카테고리를 1개 이상 선택해 주세요.');
+      return;
+    }
     setCatSaving(true);
     try {
       const { data } = await updateMe({ interest_categories: selectedCats });
       setProfile(data);
       setCatSaved(true);
-    } catch {
-      // 저장 실패 — 사용자에게 표시 없이 조용히 처리
+      // 3초 후 저장 메시지 자동 사라짐 (UX)
+      setTimeout(() => setCatSaved(false), 3000);
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      const status = err?.response?.status;
+      if (status === 401) {
+        setCatError('로그인이 만료되었습니다. 다시 로그인해 주세요.');
+      } else if (!err?.response) {
+        setCatError('네트워크 오류 - 백엔드 서버에 연결할 수 없습니다.');
+      } else {
+        setCatError(detail || '카테고리 저장에 실패했습니다. 다시 시도해 주세요.');
+      }
+      console.error('[Settings] 카테고리 저장 실패:', err);
     } finally {
       setCatSaving(false);
     }
@@ -221,6 +238,17 @@ export default function Settings() {
             {catSaving ? '저장 중...' : catSaved ? '저장됨 ✓' : '저장'}
           </button>
         </div>
+        {/* 저장 결과 / 오류 메시지 */}
+        {catError && (
+          <p className="settings__error" role="alert" style={{ color: '#c00', marginTop: 8, fontSize: '0.9em' }}>
+            {catError}
+          </p>
+        )}
+        {catSaved && !catError && (
+          <p className="settings__success" role="status" style={{ color: '#0a7', marginTop: 8, fontSize: '0.9em' }}>
+            관심 카테고리가 저장되었습니다. 다음 피드부터 반영됩니다.
+          </p>
+        )}
       </div>
 
       {/* ════════════════════════════════

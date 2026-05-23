@@ -16,9 +16,9 @@
 
 3. AdaptiveRateController (적응형 수집량 조절)
    - 서버 CPU 사용률에 따라 카테고리당 수집 건수를 동적으로 결정한다.
-   - CPU < 50%  → 카테고리당 50건
-   - CPU 50~70% → 카테고리당 30건
-   - CPU > 70%  → 카테고리당 15건
+   - CPU < 50%  → 카테고리당 20건
+   - CPU 50~70% → 카테고리당 15건
+   - CPU > 70%  → 카테고리당 10건
 """
 
 import asyncio
@@ -83,7 +83,7 @@ class CircuitBreaker:
             elapsed = time.monotonic() - self._last_failure_time
             if elapsed >= self.recovery_timeout:
                 self._state = CircuitState.HALF_OPEN
-                print(f"[CircuitBreaker:{self.name}] OPEN → HALF_OPEN (시험 호출 허용)")
+                print(f"[CircuitBreaker:{self.name}] OPEN -> HALF_OPEN (시험 호출 허용)")
         return self._state
 
     def can_call(self) -> bool:
@@ -94,7 +94,7 @@ class CircuitBreaker:
         """
         current = self.state
         if current == CircuitState.OPEN:
-            print(f"[CircuitBreaker:{self.name}] 서킷 OPEN — 호출 차단됨")
+            print(f"[CircuitBreaker:{self.name}] 서킷 OPEN - 호출 차단됨")
             return False
         return True
 
@@ -103,7 +103,7 @@ class CircuitBreaker:
         async with self._lock:
             self._failure_count = 0
             if self._state == CircuitState.HALF_OPEN:
-                print(f"[CircuitBreaker:{self.name}] HALF_OPEN → CLOSED (정상 복귀)")
+                print(f"[CircuitBreaker:{self.name}] HALF_OPEN -> CLOSED (정상 복귀)")
             self._state = CircuitState.CLOSED
 
     async def record_failure(self):
@@ -122,7 +122,7 @@ class CircuitBreaker:
                 self._state = CircuitState.OPEN
                 self._last_failure_time = time.monotonic()
                 print(
-                    f"[CircuitBreaker:{self.name}] CLOSED → OPEN "
+                    f"[CircuitBreaker:{self.name}] CLOSED -> OPEN "
                     f"({self.recovery_timeout}초간 호출 중단)"
                 )
 
@@ -189,7 +189,7 @@ class BackPressureController:
                 self._is_paused = True
                 print(
                     f"[BackPressure] 큐 {self._queue_size}건 > "
-                    f"{self.pause_threshold}건 → 크롤링 일시 중지"
+                    f"{self.pause_threshold}건 -> 크롤링 일시 중지"
                 )
 
     async def decrement(self, count: int = 1):
@@ -202,8 +202,8 @@ class BackPressureController:
             if self._is_paused and self._queue_size <= self.resume_threshold:
                 self._is_paused = False
                 print(
-                    f"[BackPressure] 큐 {self._queue_size}건 ≤ "
-                    f"{self.resume_threshold}건 → 크롤링 재개"
+                    f"[BackPressure] 큐 {self._queue_size}건 <= "
+                    f"{self.resume_threshold}건 -> 크롤링 재개"
                 )
 
     async def wait_if_paused(self, check_interval: float = 1.0):
@@ -223,18 +223,18 @@ class AdaptiveRateController:
     서버 CPU 부하에 따라 카테고리당 수집 건수를 동적으로 결정한다.
 
     CPU 사용률 구간별 수집량:
-      - CPU < 50%  → 카테고리당 50건 (여유 상태)
-      - CPU 50~70% → 카테고리당 30건 (보통 부하)
-      - CPU > 70%  → 카테고리당 15건 (고부하 상태)
+      - CPU < 50%  → 카테고리당 20건 (여유 상태)
+      - CPU 50~70% → 카테고리당 15건 (보통 부하)
+      - CPU > 70%  → 카테고리당 10건 (고부하 상태)
 
     psutil.cpu_percent()를 사용하며, interval=1로 1초간 샘플링한다.
     """
 
     # CPU 구간별 수집 건수 매핑
     TIERS = [
-        (50.0, 50),   # CPU < 50%  → 50건
-        (70.0, 30),   # CPU < 70%  → 30건
-        (100.0, 15),  # CPU ≤ 100% → 15건
+        (50.0, 20),   # CPU < 50%  → 20건 (여유 상태)
+        (70.0, 15),   # CPU < 70%  → 15건 (보통 부하)
+        (100.0, 10),  # CPU ≤ 100% → 10건 (고부하 상태)
     ]
 
     @staticmethod
@@ -252,7 +252,7 @@ class AdaptiveRateController:
             if cpu_percent < threshold:
                 print(
                     f"[AdaptiveRate] CPU {cpu_percent:.1f}% "
-                    f"→ 카테고리당 {count}건 수집"
+                    f"-> 카테고리당 {count}건 수집"
                 )
                 return count
 

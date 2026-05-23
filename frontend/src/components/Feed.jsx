@@ -37,12 +37,12 @@ export default function Feed() {
   // 정렬 기준 (추천순 / 최신순 / 신뢰도순)
   const [activeSort, setActiveSort] = useState('recommended');
 
-  // 피드 데이터 로드
+  // 피드 데이터 로드 (activeCategory 를 서버에 전달하여 카테고리별 DB 필터)
   const loadFeed = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetchFeed();
+      const response = await fetchFeed(activeCategory);
       const data = response?.data;
       if (data && typeof data === 'object') {
         setFeed(data);
@@ -50,13 +50,50 @@ export default function Feed() {
         setFeed({ subscription_track: [], recommendation_track: [] });
       }
     } catch (err) {
-      setError('피드를 불러오는 데 실패했습니다.');
+      // 에러 종류를 구분하여 진단 메시지 제공 (단순 "실패" 메시지로는 원인 파악 불가)
+      const status = err?.response?.status;
+      const code = err?.code;
+      let diagnostic;
+      if (code === 'ERR_NETWORK' || code === 'ECONNABORTED' || !err?.response) {
+        diagnostic = {
+          title: '백엔드 서버에 연결할 수 없습니다',
+          detail: 'run_all.bat 가 정상 실행 중인지, 백엔드 cmd 창("News Curator - Backend")이 떠 있는지 확인하세요.',
+          action: '.\\diagnose.bat 실행 → 권장 조치 확인',
+        };
+      } else if (status === 401) {
+        // 인터셉터가 /login 으로 리다이렉트해야 정상. 여기 오면 토큰 만료
+        diagnostic = {
+          title: '인증이 만료되었습니다',
+          detail: '다시 로그인이 필요합니다.',
+          action: '잠시 후 로그인 페이지로 이동합니다',
+        };
+      } else if (status === 500) {
+        diagnostic = {
+          title: '서버 내부 오류 (500)',
+          detail: 'DB 연결이 끊겼거나 백엔드가 비정상 상태일 수 있습니다. 백엔드 cmd 창의 "[Startup] DB 초기화" 로그를 확인하세요.',
+          action: '.\\diagnose.bat 실행으로 어느 레이어가 깨졌는지 확인',
+        };
+      } else if (status === 503) {
+        diagnostic = {
+          title: '서비스를 일시적으로 사용할 수 없습니다 (503)',
+          detail: '백엔드가 시작 중이거나 의존 서비스(DB/Redis)가 준비 중입니다.',
+          action: '1~2분 후 다시 시도',
+        };
+      } else {
+        diagnostic = {
+          title: `피드를 불러오는 데 실패했습니다 ${status ? `(${status})` : ''}`,
+          detail: err?.message || '알 수 없는 오류',
+          action: '.\\diagnose.bat 로 진단',
+        };
+      }
+      setError(diagnostic);
       console.error('[Feed] 로드 실패:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeCategory]);
 
+  // activeCategory 가 바뀌면 loadFeed 가 갱신되어 서버에서 해당 카테고리를 재조회
   useEffect(() => {
     loadFeed();
   }, [loadFeed]);
@@ -114,10 +151,18 @@ export default function Feed() {
   }
 
   if (error) {
+    // error 는 객체 { title, detail, action } 형식이지만, 옛 코드 호환을 위해 문자열도 허용
+    const e = typeof error === 'string' ? { title: error } : error;
     return (
       <div className="empty-state" role="alert">
-        <p>{error}</p>
-        <button onClick={loadFeed} className="btn-retry">다시 시도</button>
+        <p style={{ fontWeight: 600, fontSize: '1.1em' }}>{e.title}</p>
+        {e.detail && <p style={{ marginTop: 8, color: '#666', whiteSpace: 'pre-line' }}>{e.detail}</p>}
+        {e.action && (
+          <p style={{ marginTop: 8, color: '#888', fontSize: '0.9em' }}>
+            <strong>다음 단계:</strong> {e.action}
+          </p>
+        )}
+        <button onClick={loadFeed} className="btn-retry" style={{ marginTop: 16 }}>다시 시도</button>
       </div>
     );
   }

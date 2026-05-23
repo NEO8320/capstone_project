@@ -99,6 +99,7 @@ async def get_personalized_feed(
     user: User,
     db: AsyncSession,
     redis: aioredis.Redis | None,
+    category: str | None = None,
 ) -> FeedResponse:
     """
     사용자 맞춤형 개인화 뉴스 피드를 조합하여 반환한다 (API-04).
@@ -106,8 +107,13 @@ async def get_personalized_feed(
     1. Redis 캐시가 있으면 즉시 반환 (5분 TTL)
     2. 캐시 미스 → 구독 트랙 + 추천 트랙을 각각 구성
     3. 결과를 Redis에 캐싱 후 반환
+
+    Args:
+        category: 추천 트랙을 특정 카테고리로 DB 레벨 필터링.
+                  None이면 전체 카테고리(기존 동작). 캐시 키도 카테고리별로 분리.
     """
-    cache_key = f"user:{user.email}:feed"
+    # 카테고리별 캐시 키 분리 — '전체'(None)와 각 카테고리 탭이 서로 다른 캐시를 가짐
+    cache_key = f"user:{user.email}:feed:{category or 'all'}"
 
     # ── Redis 캐시 히트 ──
     if redis:
@@ -138,6 +144,7 @@ async def get_personalized_feed(
     )
     recommendation_track = await _build_recommendation_track(
         user, db, subscribed_press, subscribed_journalists, excluded_urls, read_urls,
+        category=category,
     )
 
     feed = FeedResponse(
@@ -156,12 +163,22 @@ async def get_personalized_feed(
 
 
 async def invalidate_feed_cache(user_email: str, redis: aioredis.Redis | None):
-    """사용자의 피드 캐시를 즉시 무효화한다."""
-    if redis:
-        try:
-            await redis.delete(f"user:{user_email}:feed")
-        except Exception:
-            pass
+    """
+    사용자의 피드 캐시를 즉시 무효화한다.
+    카테고리별 캐시 키(user:{email}:feed:{category})가 여러 개 존재하므로
+    패턴으로 스캔하여 모두 삭제한다.
+    """
+    if not redis:
+        return
+    try:
+        deleted = 0
+        async for key in redis.scan_iter(match=f"user:{user_email}:feed*", count=100):
+            await redis.delete(key)
+            deleted += 1
+        # 구버전 단일 키 호환 (혹시 남아있을 경우)
+        await redis.delete(f"user:{user_email}:feed")
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -242,6 +259,7 @@ async def _build_recommendation_track(
     subscribed_journalists: set[str],
     excluded_urls: set[str],
     read_urls: set[str] | None = None,
+    category: str | None = None,
 ) -> list[FeedItem]:
     """
     SC-03: 추천 트랙 구성.
@@ -256,21 +274,35 @@ async def _build_recommendation_track(
       벡터 연산을 완전히 건너뛰고,
       credibility DESC + published_at DESC 기준 상위 기사를 반환.
       유사도 점수는 중립값(0.5)으로 대체한다.
+
+    ■ category 필터 (특정 탭 클릭 시):
+      지정되면 후보 쿼리에 WHERE category = :category 를 적용하여
+      해당 카테고리 기사만 DB 레벨에서 조회한다. 정치가 전체의 62%를
+      차지해도 모든 카테고리 탭이 정상 표시되도록 보장한다.
+      카테고리 지정 시 후보/반환 limit 을 충분히 크게 잡아 해당 카테고리를
+      모두 노출한다.
     """
     read_urls = read_urls or set()
     w = _load_weights()
     now = datetime.now(timezone.utc)
     cold_start = _is_cold_start(user.interest_vector)
 
+    # 카테고리 지정 시 반환 건수 (해당 카테고리를 폭넓게 노출)
+    return_limit = MAX_RECOMMENDATION_TRACK
+
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # 경로 A: 콜드 스타트 폴백
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if cold_start:
-        result = await db.execute(
-            select(Article)
-            .order_by(Article.credibility.desc(), Article.published_at.desc())
-            .limit(COLD_START_LIMIT * 2)  # 제외 대상 감안하여 여유분
-        )
+        cold_stmt = select(Article)
+        if category:
+            cold_stmt = cold_stmt.where(Article.category == category)
+        # 카테고리 지정 시 더 많이 가져온다 (해당 카테고리 전부 노출 목적)
+        cold_limit = (return_limit * 4) if category else (COLD_START_LIMIT * 2)
+        cold_stmt = cold_stmt.order_by(
+            Article.credibility.desc(), Article.published_at.desc()
+        ).limit(cold_limit)
+        result = await db.execute(cold_stmt)
         candidates = result.scalars().all()
 
         scored_items: list[FeedItem] = []
@@ -306,7 +338,8 @@ async def _build_recommendation_track(
             )
 
         scored_items.sort(key=lambda x: x.score, reverse=True)
-        return scored_items[:COLD_START_LIMIT]
+        # 카테고리 지정 시 해당 카테고리를 폭넓게, 미지정 시 콜드스타트 기본 건수
+        return scored_items[:(return_limit if category else COLD_START_LIMIT)]
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # 경로 B: 정상 — 최신순 후보 선별 + 코사인 유사도 스코어링
@@ -314,10 +347,20 @@ async def _build_recommendation_track(
     interest_vec_literal = _vector_literal(user.interest_vector)
     disinterest_cold = _is_cold_start(user.disinterest_vector)
 
+    # 카테고리 지정 시 WHERE 절 + 파라미터 (asyncpg NULL 타입 추론 이슈 회피 위해
+    # 문자열 보간이 아닌 조건부 절 구성)
+    cat_clause = "WHERE category = :category" if category else ""
+    base_params: dict = {
+        "interest_vec": interest_vec_literal,
+        "candidate_limit": MAX_RECOMMENDATION_TRACK * 4,
+    }
+    if category:
+        base_params["category"] = category
+
     if disinterest_cold:
         # 비관심 벡터가 영벡터 → 비관심 거리를 NULL로 우회
         # Task 1: ORDER BY published_at DESC — 전체 카테고리 편향 없이 후보 선별
-        query = text("""
+        query = text(f"""
             SELECT
                 url, title, summary, category, credibility,
                 press, journalist, published_at,
@@ -325,20 +368,16 @@ async def _build_recommendation_track(
                 (embedding <=> :interest_vec) AS interest_distance,
                 NULL AS disinterest_distance
             FROM articles
+            {cat_clause}
             ORDER BY published_at DESC
             LIMIT :candidate_limit
         """)
-        result = await db.execute(
-            query,
-            {
-                "interest_vec": interest_vec_literal,
-                "candidate_limit": MAX_RECOMMENDATION_TRACK * 4,
-            },
-        )
+        result = await db.execute(query, base_params)
     else:
         disinterest_vec_literal = _vector_literal(user.disinterest_vector)
+        params = {**base_params, "disinterest_vec": disinterest_vec_literal}
         # Task 1: ORDER BY published_at DESC — 전체 카테고리 편향 없이 후보 선별
-        query = text("""
+        query = text(f"""
             SELECT
                 url, title, summary, category, credibility,
                 press, journalist, published_at,
@@ -346,17 +385,11 @@ async def _build_recommendation_track(
                 (embedding <=> :interest_vec) AS interest_distance,
                 (embedding <=> :disinterest_vec) AS disinterest_distance
             FROM articles
+            {cat_clause}
             ORDER BY published_at DESC
             LIMIT :candidate_limit
         """)
-        result = await db.execute(
-            query,
-            {
-                "interest_vec": interest_vec_literal,
-                "disinterest_vec": disinterest_vec_literal,
-                "candidate_limit": MAX_RECOMMENDATION_TRACK * 4,
-            },
-        )
+        result = await db.execute(query, params)
 
     candidates = result.fetchall()
     scored_items: list[FeedItem] = []
