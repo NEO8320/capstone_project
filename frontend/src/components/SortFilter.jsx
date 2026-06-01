@@ -81,3 +81,26 @@ export function applySortToItems(items, sortKey) {
       });
   }
 }
+
+/**
+ * 점수 가중 셔플 (Efraimidis-Spirakis 가중 무작위 샘플링).
+ * 새로고침 시 '추천순'의 취지(점수 높은 기사가 상위에 올 확률↑)는 유지하면서도
+ * 매번 순서가 달라지도록 한다. 점수가 비슷한 상위군에서 다양한 조합이 노출된다.
+ *
+ * 각 항목에 key = random()^(1/weight) 를 부여해 key 내림차순 정렬.
+ * weight(=score)가 클수록 큰 key가 나올 확률이 높아 상위에 배치된다.
+ *
+ * @param {Array} items - FeedItem 배열 (article + score + ...)
+ * @returns {Array} 가중 셔플된 새 배열
+ */
+export function weightedShuffle(items) {
+  if (!Array.isArray(items) || items.length === 0) return items;
+  return items
+    .map((it) => {
+      // score는 보통 0~1 범위. 0/음수 방어를 위해 하한을 둔다.
+      const w = Math.max(0.0001, Number(it?.score) || 0.0001);
+      return { it, key: Math.pow(Math.random(), 1 / w) };
+    })
+    .sort((a, b) => b.key - a.key)
+    .map((x) => x.it);
+}

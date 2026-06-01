@@ -67,6 +67,37 @@
   gap: var(--spacing-sm);
 }
 
+/* 컨트롤 우측: 새로고침 + 읽음숨김 묶음 */
+.feed__controls-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.feed__refresh {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border: 1.5px solid var(--color-accent, var(--color-link));
+  border-radius: 20px;
+  background: var(--color-bg);
+  color: var(--color-accent, var(--color-link));
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.feed__refresh:hover {
+  background: var(--color-accent, var(--color-link));
+  color: #fff;
+}
+
+.feed__refresh:active {
+  transform: scale(0.96);
+}
+
 .feed__hide-read {
   flex-shrink: 0;
   padding: 6px 14px;

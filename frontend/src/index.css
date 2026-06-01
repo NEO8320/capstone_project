@@ -201,10 +201,11 @@ button:focus-visible {
   }
 }
 
-/* 모바일: 1열 */
+/* 모바일: 2열 (데스크탑과 비슷한 밀도 유지) */
 @media (max-width: 767px) {
   .card-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-sm);
   }
   .header {
     flex-direction: column;
@@ -223,8 +224,12 @@ button:focus-visible {
   }
 }
 
-/* 작은 폰 (~480px): 컨테이너 패딩 축소 + 네비 버튼 압축 */
+/* 작은 폰 (~480px): 2열 유지 + 컨테이너 패딩·간격 축소 */
 @media (max-width: 480px) {
+  .card-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
   .container,
   .app-container,
   main {

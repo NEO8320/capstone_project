@@ -16,12 +16,12 @@
  *   4. Undo 클릭 시 API 호출 (DELETE) + 카드 복원
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { dislikeArticle, fetchFeed, markRead, undoDislike } from '../api/feed';
 import ArticleCard from './ArticleCard';
 import CategoryFilter from './CategoryFilter';
 import Pagination from './Pagination';
-import SortFilter, { applySortToItems } from './SortFilter';
+import SortFilter, { applySortToItems, weightedShuffle } from './SortFilter';
 import Toast from './Toast';
 import './Feed.css';
 
@@ -42,6 +42,8 @@ export default function Feed() {
   // 페이지네이션 + 읽은 기사 숨김
   const [currentPage, setCurrentPage] = useState(1);
   const [hideRead, setHideRead] = useState(false);
+  // 새로고침 시드 — 값이 바뀔 때마다 추천순 가중 셔플이 새 조합을 만든다
+  const [refreshSeed, setRefreshSeed] = useState(0);
 
   // 피드 데이터 로드 (activeCategory 를 서버에 전달하여 카테고리별 DB 필터)
   const loadFeed = useCallback(async () => {
@@ -181,39 +183,43 @@ export default function Feed() {
   if (!feed) return null;
 
   // 응답 스키마가 흔들려도 렌더링이 죽지 않도록 안전 배열로 강제
+  // (추천 트랙은 sortedRecommendation useMemo 안에서 feed로부터 직접 추출)
   const subscriptionTrack = Array.isArray(feed?.subscription_track)
     ? feed.subscription_track
     : [];
-  const recommendationTrack = Array.isArray(feed?.recommendation_track)
-    ? feed.recommendation_track
-    : [];
 
-  // 숨겨진 기사 필터링
+  // 구독 트랙 숨김 필터링 (추천 트랙은 아래 useMemo 파이프라인에서 처리)
   const visibleSubscription = subscriptionTrack.filter((item) => {
     const article = item?.article;
     const url = article?.url;
     return Boolean(article) && (!url || !hiddenUrls.has(url));
   });
-  const visibleRecommendation = recommendationTrack.filter((item) => {
-    const article = item?.article;
-    const url = article?.url;
-    return Boolean(article) && (!url || !hiddenUrls.has(url));
-  });
 
-  // 추천 트랙 카테고리 필터링 (서버가 이미 필터링하지만 방어적으로 유지)
-  const categoryFiltered = activeCategory === '전체'
-    ? visibleRecommendation
-    : visibleRecommendation.filter(
-        (item) => item?.article?.category === activeCategory
-      );
-
-  // 읽은 기사 숨김 (토글 ON일 때만)
-  const filteredRecommendation = hideRead
-    ? categoryFiltered.filter((item) => !item?.is_read)
-    : categoryFiltered;
-
-  // 선택된 정렬 기준 적용 (필터 적용 이후)
-  const sortedRecommendation = applySortToItems(filteredRecommendation, activeSort);
+  // 추천 트랙 파이프라인: 숨김 제외 → 카테고리 필터 → 읽음 숨김 → 정렬/셔플.
+  // useMemo로 묶어 refreshSeed가 바뀔 때만(=새로고침 버튼) 가중 셔플이 새 조합을 만든다.
+  // (Math.random 기반이라 매 렌더 재계산되면 스크롤·상태변경 때마다 순서가 바뀌어버림)
+  const sortedRecommendation = useMemo(() => {
+    const track = Array.isArray(feed?.recommendation_track)
+      ? feed.recommendation_track
+      : [];
+    // 1) 관심없음(optimistic) 숨김 제외
+    let items = track.filter((item) => {
+      const url = item?.article?.url;
+      return Boolean(item?.article) && (!url || !hiddenUrls.has(url));
+    });
+    // 2) 카테고리 필터 (서버가 이미 하지만 방어적으로 유지)
+    if (activeCategory !== '전체') {
+      items = items.filter((it) => it?.article?.category === activeCategory);
+    }
+    // 3) 읽은 기사 숨김 (토글 ON일 때만)
+    if (hideRead) items = items.filter((it) => !it?.is_read);
+    // 4) 정렬: '추천순'은 점수 가중 셔플(새로고침마다 다른 조합), 그 외는 결정적 정렬
+    if (activeSort === 'recommended') {
+      return weightedShuffle(applySortToItems(items, 'recommended'));
+    }
+    return applySortToItems(items, activeSort);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feed, hiddenUrls, activeCategory, hideRead, activeSort, refreshSeed]);
 
   // 페이지네이션: 전체 페이지 수 + 현재 페이지 슬라이스
   const totalPages = Math.max(1, Math.ceil(sortedRecommendation.length / PAGE_SIZE));
@@ -230,6 +236,13 @@ export default function Feed() {
     if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  // 새로고침: 서버 재요청 + (추천순이면) 가중 셔플 재계산 + 1페이지로
+  const handleRefresh = () => {
+    setRefreshSeed((s) => s + 1);   // sortedRecommendation useMemo 재계산 트리거
+    setCurrentPage(1);
+    loadFeed();                      // 캐시 만료 시 최신 데이터 반영
+  };
+
   return (
     <div className="feed">
       {/* ── 카테고리 필터 탭 ── */}
@@ -239,17 +252,30 @@ export default function Feed() {
         onChange={setActiveCategory}
       />
 
-      {/* ── 정렬 기준 + 읽은 기사 숨김 토글 (한 줄) ── */}
+      {/* ── 정렬 기준 + 새로고침 + 읽은 기사 숨김 토글 (한 줄) ── */}
       <div className="feed__controls">
         <SortFilter active={activeSort} onChange={setActiveSort} />
-        <button
-          type="button"
-          className={`feed__hide-read ${hideRead ? 'feed__hide-read--active' : ''}`}
-          onClick={() => setHideRead((v) => !v)}
-          aria-pressed={hideRead}
-        >
-          {hideRead ? '✓ 읽은 기사 숨김' : '읽은 기사 숨기기'}
-        </button>
+        <div className="feed__controls-right">
+          <button
+            type="button"
+            className="feed__refresh"
+            onClick={handleRefresh}
+            title={activeSort === 'recommended'
+              ? '새로고침 — 추천 상위 기사들을 다시 섞어 보여줍니다'
+              : '새로고침 — 최신 기사를 다시 불러옵니다'}
+            aria-label="피드 새로고침"
+          >
+            ↻ 새로고침
+          </button>
+          <button
+            type="button"
+            className={`feed__hide-read ${hideRead ? 'feed__hide-read--active' : ''}`}
+            onClick={() => setHideRead((v) => !v)}
+            aria-pressed={hideRead}
+          >
+            {hideRead ? '✓ 읽은 기사 숨김' : '읽은 기사 숨기기'}
+          </button>
+        </div>
       </div>
 
       {/* ── 구독 트랙 (상단) — 가로 스크롤 ── */}
