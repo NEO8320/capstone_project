@@ -107,6 +107,71 @@ async def register(body: UserCreate, db: AsyncSession = Depends(get_db)):
 
 
 # ============================================================
+# API-01b: 게스트 로그인 (계정 없이 둘러보기)
+# ============================================================
+# 공용 게스트 계정 1개를 멱등하게 보장 생성하고 토큰을 발급한다.
+# 시연 시 평가자가 회원가입 없이 즉시 서비스를 체험할 수 있게 한다.
+GUEST_EMAIL = "guest@newscurator.demo"
+# 게스트 초기 관심 카테고리 (대표 3종) — 콜드 스타트 벡터 시드로 사용
+GUEST_CATEGORIES = ["정치", "경제", "IT·과학"]
+
+
+@router.post("/guest", response_model=TokenResponse, summary="게스트 로그인 (계정 없이 둘러보기)")
+async def guest_login(db: AsyncSession = Depends(get_db)):
+    """
+    공용 게스트 계정으로 로그인한다.
+    - 게스트 계정이 없으면 생성(멱등), 있으면 재사용
+    - 일반 로그인과 동일한 JWT 토큰 발급 → 이후 흐름은 일반 회원과 동일
+
+    참고: 게스트는 공용 계정이므로 읽음/관심없음 피드백이 공유된다.
+          시연 후 데이터 초기화로 정리한다.
+    """
+    import secrets as _secrets
+
+    from sqlalchemy.exc import IntegrityError
+
+    user = await db.get(User, GUEST_EMAIL)
+    if not user:
+        # 콜드 스타트 벡터 (대표 카테고리 평균, 실패 시 랜덤 정규화 폴백)
+        try:
+            interest_vector = await asyncio.wait_for(
+                compute_cold_start_vector(GUEST_CATEGORIES), timeout=60.0
+            )
+        except (asyncio.TimeoutError, Exception) as e:
+            print(f"[Guest] 콜드 스타트 벡터 생성 실패, 폴백 사용: {e}")
+            rng = np.random.default_rng()
+            v = rng.standard_normal(settings.EMBEDDING_DIM).astype(np.float64)
+            interest_vector = (v / np.linalg.norm(v)).tolist()
+
+        user = User(
+            email=GUEST_EMAIL,
+            hashed_password=_hash_password(_secrets.token_hex(16)),  # 직접 로그인 불가
+            name="게스트",
+            interest_categories=GUEST_CATEGORIES,
+            interest_vector=interest_vector,
+            disinterest_vector=get_zero_vector(),
+            font_size_level=1,
+        )
+        db.add(user)
+        try:
+            await db.commit()
+        except IntegrityError:
+            # 동시 요청으로 이미 생성된 경우 — 롤백 후 재조회
+            await db.rollback()
+            user = await db.get(User, GUEST_EMAIL)
+
+    access_token = _create_token(
+        {"sub": user.email},
+        timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    refresh_token = _create_token(
+        {"sub": user.email, "type": "refresh"},
+        timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    )
+    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+
+
+# ============================================================
 # API-02: 로그인
 # ============================================================
 @router.post("/login", response_model=TokenResponse)

@@ -139,6 +139,52 @@
   cursor: not-allowed;
 }
 
+/* ── 게스트로 둘러보기 ── */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 1.25rem 0 1rem;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+.auth-divider::before { margin-right: 0.75rem; }
+.auth-divider::after { margin-left: 0.75rem; }
+
+.auth-form__guest {
+  width: 100%;
+  padding: 0.75rem;
+  background: transparent;
+  color: var(--color-accent, var(--color-link));
+  border: 1px solid var(--color-accent, var(--color-link));
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.auth-form__guest:hover:not(:disabled) {
+  background: var(--color-accent, var(--color-link));
+  color: #fff;
+}
+.auth-form__guest:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.auth-card__hint {
+  text-align: center;
+  margin-top: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+}
+
 .auth-card__link {
   text-align: center;
   margin-top: 1.25rem;

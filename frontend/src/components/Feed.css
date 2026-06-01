@@ -57,3 +57,13 @@
 .btn-retry:hover {
   opacity: 0.9;
 }
+
+/* ── 모바일: 구독 트랙 카드 폭 축소 ── */
+@media (max-width: 480px) {
+  .card-scroll > * {
+    flex: 0 0 85vw;   /* 화면 폭의 85% — 다음 카드가 살짝 보여 스와이프 유도 */
+  }
+  .feed {
+    gap: var(--spacing-lg);
+  }
+}

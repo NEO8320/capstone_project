@@ -209,6 +209,34 @@ button:focus-visible {
   .header {
     flex-direction: column;
     gap: var(--spacing-sm);
+    align-items: stretch;
+    text-align: center;
+  }
+  /* 네비 버튼이 좁은 화면에서 줄바꿈되고 가운데 정렬 */
+  .header__nav {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--spacing-sm);
+  }
+  .section-title {
+    font-size: var(--font-size-md);
+  }
+}
+
+/* 작은 폰 (~480px): 컨테이너 패딩 축소 + 네비 버튼 압축 */
+@media (max-width: 480px) {
+  .container,
+  .app-container,
+  main {
+    padding-left: var(--spacing-sm);
+    padding-right: var(--spacing-sm);
+  }
+  .header__nav {
+    gap: 4px;
+  }
+  .nav-btn {
+    padding: 6px 10px;
+    font-size: 0.85rem;
   }
 }
 

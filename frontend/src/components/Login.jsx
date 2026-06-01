@@ -22,6 +22,7 @@ export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -47,6 +48,23 @@ export default function Login() {
       setError(detail || '로그인에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 게스트로 둘러보기: 공용 게스트 계정으로 즉시 로그인
+  const handleGuest = async () => {
+    setError('');
+    setGuestLoading(true);
+    try {
+      const { data } = await axios.post('/api/auth/guest');
+      localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
+      navigate('/feed');
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      setError(detail || '게스트 접속에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setGuestLoading(false);
     }
   };
 
@@ -98,11 +116,25 @@ export default function Login() {
           <button
             type="submit"
             className="auth-form__submit"
-            disabled={loading}
+            disabled={loading || guestLoading}
           >
             {loading ? '로그인 중...' : '로그인'}
           </button>
         </form>
+
+        {/* 게스트로 둘러보기 — 계정 없이 즉시 체험 */}
+        <div className="auth-divider" role="separator" aria-label="또는">또는</div>
+        <button
+          type="button"
+          className="auth-form__guest"
+          onClick={handleGuest}
+          disabled={loading || guestLoading}
+        >
+          {guestLoading ? '게스트 접속 중...' : '계정 없이 둘러보기 (게스트)'}
+        </button>
+        <p className="auth-card__hint">
+          게스트는 둘러보기 전용입니다. 가입하면 내 취향에 맞춰 추천이 개인화됩니다.
+        </p>
 
         <p className="auth-card__link" style={{ textAlign: 'right', marginTop: '-0.5rem' }}>
           <Link to="/forgot-password" style={{ fontSize: '0.875rem', color: '#6b7280' }}>
