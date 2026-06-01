@@ -322,6 +322,7 @@ capstone_project-chore-docs-and-scripts/
 ### 7-1. 크롤링 파이프라인 (`pipeline.py`)
 
 1시간마다(그리고 서버 시작 직후 1회) 다음 순서로 실행됩니다.
+(1시간 주기를 택한 근거는 [`docs/CRAWL_INTERVAL_RATIONALE.md`](docs/CRAWL_INTERVAL_RATIONALE.md) 참고.)
 
 ```
 [1] 적응형 수집량 결정    CPU 부하에 따라 카테고리당 10~20건 (resilience.py)
