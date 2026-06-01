@@ -20,9 +20,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { dislikeArticle, fetchFeed, markRead, undoDislike } from '../api/feed';
 import ArticleCard from './ArticleCard';
 import CategoryFilter from './CategoryFilter';
+import Pagination from './Pagination';
 import SortFilter, { applySortToItems } from './SortFilter';
 import Toast from './Toast';
 import './Feed.css';
+
+const PAGE_SIZE = 15;  // 추천 트랙 페이지당 기사 수
 
 export default function Feed() {
   const [feed, setFeed] = useState(null);
@@ -36,6 +39,9 @@ export default function Feed() {
   const [activeCategory, setActiveCategory] = useState('전체');
   // 정렬 기준 (추천순 / 최신순 / 신뢰도순)
   const [activeSort, setActiveSort] = useState('recommended');
+  // 페이지네이션 + 읽은 기사 숨김
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hideRead, setHideRead] = useState(false);
 
   // 피드 데이터 로드 (activeCategory 를 서버에 전달하여 카테고리별 DB 필터)
   const loadFeed = useCallback(async () => {
@@ -97,6 +103,11 @@ export default function Feed() {
   useEffect(() => {
     loadFeed();
   }, [loadFeed]);
+
+  // 카테고리/정렬/읽음숨김이 바뀌면 1페이지로 리셋
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeCategory, activeSort, hideRead]);
 
   // 기사 읽음 처리 (제목 클릭 시)
   const handleRead = useCallback(async (articleUrl) => {
@@ -189,15 +200,35 @@ export default function Feed() {
     return Boolean(article) && (!url || !hiddenUrls.has(url));
   });
 
-  // 추천 트랙 카테고리 필터링
-  const filteredRecommendation = activeCategory === '전체'
+  // 추천 트랙 카테고리 필터링 (서버가 이미 필터링하지만 방어적으로 유지)
+  const categoryFiltered = activeCategory === '전체'
     ? visibleRecommendation
     : visibleRecommendation.filter(
         (item) => item?.article?.category === activeCategory
       );
 
-  // 선택된 정렬 기준 적용 (카테고리 필터 적용 이후)
+  // 읽은 기사 숨김 (토글 ON일 때만)
+  const filteredRecommendation = hideRead
+    ? categoryFiltered.filter((item) => !item?.is_read)
+    : categoryFiltered;
+
+  // 선택된 정렬 기준 적용 (필터 적용 이후)
   const sortedRecommendation = applySortToItems(filteredRecommendation, activeSort);
+
+  // 페이지네이션: 전체 페이지 수 + 현재 페이지 슬라이스
+  const totalPages = Math.max(1, Math.ceil(sortedRecommendation.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);  // 데이터 줄어들어 범위 초과 시 보정
+  const pagedRecommendation = sortedRecommendation.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
+
+  // 페이지 변경 핸들러 (변경 후 추천 섹션 상단으로 스크롤)
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    const sec = document.getElementById('rec-section');
+    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <div className="feed">
@@ -208,8 +239,18 @@ export default function Feed() {
         onChange={setActiveCategory}
       />
 
-      {/* ── 정렬 기준 필터 (추천순/최신순/신뢰도순) ── */}
-      <SortFilter active={activeSort} onChange={setActiveSort} />
+      {/* ── 정렬 기준 + 읽은 기사 숨김 토글 (한 줄) ── */}
+      <div className="feed__controls">
+        <SortFilter active={activeSort} onChange={setActiveSort} />
+        <button
+          type="button"
+          className={`feed__hide-read ${hideRead ? 'feed__hide-read--active' : ''}`}
+          onClick={() => setHideRead((v) => !v)}
+          aria-pressed={hideRead}
+        >
+          {hideRead ? '✓ 읽은 기사 숨김' : '읽은 기사 숨기기'}
+        </button>
+      </div>
 
       {/* ── 구독 트랙 (상단) — 가로 스크롤 ── */}
       {visibleSubscription.length > 0 && (
@@ -228,25 +269,34 @@ export default function Feed() {
         </section>
       )}
 
-      {/* ── 추천 트랙 (하단) — 그리드 + 카테고리 필터 + 정렬 ── */}
-      <section className="feed__section" aria-label="추천 기사">
+      {/* ── 추천 트랙 (하단) — 그리드 + 카테고리 필터 + 정렬 + 페이지네이션 ── */}
+      <section className="feed__section" id="rec-section" aria-label="추천 기사">
         <h2 className="section-title">맞춤 추천 기사</h2>
         {sortedRecommendation.length > 0 ? (
-          <div className="card-grid">
-            {sortedRecommendation.map((item, index) => (
-              <ArticleCard
-                key={item?.article?.url || item?.article?.id || `rec-${index}`}
-                item={item}
-                onDislike={handleDislike}
-                onRead={handleRead}
-              />
-            ))}
-          </div>
+          <>
+            <div className="card-grid">
+              {pagedRecommendation.map((item, index) => (
+                <ArticleCard
+                  key={item?.article?.url || item?.article?.id || `rec-${index}`}
+                  item={item}
+                  onDislike={handleDislike}
+                  onRead={handleRead}
+                />
+              ))}
+            </div>
+            <Pagination
+              currentPage={safePage}
+              totalPages={totalPages}
+              onChange={handlePageChange}
+            />
+          </>
         ) : (
           <div className="empty-state">
-            {activeCategory === '전체'
-              ? '추천할 기사가 없습니다. 관심 카테고리를 설정해 보세요.'
-              : `'${activeCategory}' 카테고리 기사가 없습니다.`}
+            {hideRead
+              ? '표시할 기사가 없습니다. (읽은 기사 숨김이 켜져 있어요)'
+              : activeCategory === '전체'
+                ? '추천할 기사가 없습니다. 관심 카테고리를 설정해 보세요.'
+                : `'${activeCategory}' 카테고리 기사가 없습니다.`}
           </div>
         )}
       </section>

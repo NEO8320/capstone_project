@@ -1,0 +1,67 @@
+/* Pagination — 페이지 번호 네비게이션 */
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--spacing-xl, 32px) 0 var(--spacing-md, 16px);
+}
+
+.pagination__btn {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: calc(14px * var(--font-size-multiplier, 1));
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pagination__btn:hover:not(:disabled):not(.pagination__btn--active) {
+  border-color: var(--color-accent, var(--color-link));
+  color: var(--color-accent, var(--color-link));
+}
+
+.pagination__btn--active {
+  background: var(--color-accent, var(--color-link));
+  border-color: var(--color-accent, var(--color-link));
+  color: #fff;
+  font-weight: 700;
+  cursor: default;
+}
+
+.pagination__btn--arrow {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.pagination__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pagination__ellipsis {
+  min-width: 24px;
+  text-align: center;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  user-select: none;
+}
+
+/* 모바일: 버튼 크기 축소 */
+@media (max-width: 480px) {
+  .pagination {
+    gap: 4px;
+  }
+  .pagination__btn {
+    min-width: 32px;
+    height: 32px;
+    padding: 0 7px;
+    font-size: calc(13px * var(--font-size-multiplier, 1));
+  }
+}

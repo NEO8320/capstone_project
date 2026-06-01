@@ -48,8 +48,10 @@ from app.schemas import ArticleSummary, FeedItem, FeedResponse
 
 # ── 상수 ──
 LAMBDA_DECAY = 0.05               # 최신성 Exponential Decay 감쇠 계수
-MAX_RECOMMENDATION_TRACK = 50      # 추천 트랙 최대 반환 건수
-COLD_START_LIMIT = 20              # 콜드 스타트 시 반환 건수
+# 추천 트랙 반환 상한: 프론트가 15개씩 페이지네이션하므로 충분히 크게 둔다.
+# (카테고리=전체일 때도 사실상 전량 노출. 수백 건 정렬·페이로드는 허용 범위, Redis 5분 캐시)
+MAX_RECOMMENDATION_TRACK = 300     # 추천 트랙 최대 반환 건수
+COLD_START_LIMIT = 300             # 콜드 스타트 시 반환 건수 (게스트/신규도 페이지네이션)
 
 
 # ============================================================

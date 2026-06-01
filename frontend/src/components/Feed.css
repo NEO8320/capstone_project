@@ -58,6 +58,41 @@
   opacity: 0.9;
 }
 
+/* ── 정렬바 + 읽음 숨김 토글 한 줄 ── */
+.feed__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.feed__hide-read {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 20px;
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.feed__hide-read:hover {
+  border-color: var(--color-accent, var(--color-link));
+  color: var(--color-accent, var(--color-link));
+}
+
+.feed__hide-read--active {
+  background: var(--color-accent, var(--color-link));
+  color: #fff;
+  border-color: var(--color-accent, var(--color-link));
+  font-weight: 600;
+}
+
 /* ── 모바일: 구독 트랙 카드 폭 축소 ── */
 @media (max-width: 480px) {
   .card-scroll > * {
@@ -65,5 +100,8 @@
   }
   .feed {
     gap: var(--spacing-lg);
+  }
+  .feed__controls {
+    justify-content: flex-start;
   }
 }
