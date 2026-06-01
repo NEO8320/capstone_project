@@ -157,6 +157,21 @@
   background: var(--color-accent-hover, #1a56db);
 }
 
+/* ── 비활성: 기자 정보 없음 ── */
+.btn-subscribe--disabled,
+.btn-subscribe:disabled {
+  border-color: var(--color-border);
+  background: var(--color-bg-secondary, transparent);
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.btn-subscribe--disabled:hover,
+.btn-subscribe:disabled:hover {
+  background: var(--color-bg-secondary, transparent);  /* hover 효과 제거 */
+}
+
 /* ── 하단 액션 ── */
 .detail__actions {
   display: flex;

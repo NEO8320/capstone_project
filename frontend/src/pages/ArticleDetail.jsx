@@ -189,7 +189,7 @@ export default function ArticleDetail() {
         >
           {pressSubscribed ? `✓ ${article.press} 구독 중` : `${article.press} 구독`}
         </button>
-        {article.journalist && (
+        {article.journalist ? (
           <button
             className={`btn-subscribe ${journalistSubscribed ? 'btn-subscribe--active' : ''}`}
             onClick={handleJournalistSubscribe}
@@ -197,6 +197,14 @@ export default function ArticleDetail() {
             {journalistSubscribed
               ? `✓ ${article.journalist} 기자 구독 중`
               : `${article.journalist} 기자 구독`}
+          </button>
+        ) : (
+          <button
+            className="btn-subscribe btn-subscribe--disabled"
+            disabled
+            title="이 기사는 기자 정보가 확인되지 않아 구독할 수 없습니다."
+          >
+            기자 정보 없음
           </button>
         )}
       </section>

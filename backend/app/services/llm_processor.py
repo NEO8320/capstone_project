@@ -62,10 +62,11 @@ CT01_SUMMARY_PROMPT = """다음 뉴스 기사의 핵심을 3줄로 요약해주�
 [기사 본문]
 {body}
 
-**반드시 한국어**로 작성하고, 5W1H(누가·언제·어디서·무엇을·왜·어떻게)
-중에서 기사에 드러난 핵심 사실을 중심으로 3줄을 작성하세요.
-각 줄은 한 문장씩, 줄바꿈(\\n)으로 구분합니다.
-다른 설명·머리말·마크다운 없이 요약 텍스트만 출력하세요."""
+작성 규칙:
+- 반드시 한국어로만 작성하세요. (영어 안내문·머리말 절대 금지)
+- 5W1H(누가·언제·어디서·무엇을·왜·어떻게) 중 기사에 드러난 핵심 사실 위주로 3개의 문장을 쓰세요.
+- 각 문장을 한 줄씩, 실제 줄바꿈으로 나눠 총 3줄로 작성하세요.
+- 번호·기호·따옴표·마크다운·"요약" 같은 머리말 없이, 한국어 요약 문장만 출력하세요."""
 
 
 # ============================================================
@@ -135,8 +136,12 @@ class LlamaService:
                 print("[CT-01] Llama 응답이 비어 있음")
                 return None
 
-            # 간혹 Llama가 '요약:', '## Summary' 같은 머리말을 붙이는 경우 제거
-            text = re.sub(r"^\s*(요약|Summary|##.*?)\s*[:：]\s*", "", text)
+            # 요약 정제: 리터럴 \n, 영어 머리말, 마크다운 등 제거
+            text = _clean_summary(text)
+            if not text:
+                print("[CT-01] 정제 후 한국어 요약이 비어 있음 (영어 응답 추정) - 폴백")
+                return None
+
             print(f"[CT-01] Llama 요약 성공 ({model})")
             return text
         except Exception as e:
@@ -353,3 +358,70 @@ def _parse_category(text: str) -> str | None:
         if keyword in text:
             return cat
     return None
+
+
+# ── 요약 머리말 제거 패턴 (첫 줄/앞부분에 붙는 안내문) ──
+_SUMMARY_PREFIX_PATTERNS = [
+    # 영어 안내문: "Here is a 3-line summary of the article:" 등
+    re.compile(r"^\s*here\s+(is|are)\b.*?:\s*", re.IGNORECASE | re.DOTALL),
+    re.compile(r"^\s*(sure|okay|ok|certainly)\b[^\n]*?:\s*", re.IGNORECASE),
+    re.compile(r"^\s*(the\s+)?(3[\s-]?line\s+)?summary\b[^\n]*?:\s*", re.IGNORECASE),
+    re.compile(r"^\s*below\s+(is|are)\b.*?:\s*", re.IGNORECASE | re.DOTALL),
+    # 한국어 머리말: "요약:", "3줄 요약 -", "## 요약" 등
+    re.compile(r"^\s*#*\s*(3줄\s*)?요약\s*[:：\-–—]?\s*"),
+    # 한국어 안내문: "다음은 ~ 요약(문)입니다.", "아래는 ~ 요약입니다" 등
+    re.compile(r"^\s*(다음은|아래는)\b[^\n]*?요약(문)?\s*(입니다|이에요|예요)?\s*[.:：]?\s*"),
+    re.compile(r"^\s*기사\s*(내용\s*)?요약\s*(문)?\s*[:：\-–—]?\s*"),
+]
+
+
+def _clean_summary(text: str) -> str | None:
+    """
+    LLM 요약 출력을 정제한다.
+
+    처리:
+      1. 리터럴 '\\n' 문자열을 실제 줄바꿈으로 변환 (프롬프트 잔재)
+      2. 영어/한국어 머리말 제거 ("Here is a 3-line summary:", "요약:" 등)
+      3. 마크다운 강조(**, ##)·선행 번호/불릿 제거
+      4. 빈 줄 정리
+      5. 한국어가 한 글자도 없으면(=영어 응답) None 반환 → description 폴백
+
+    Returns:
+        정제된 한국어 요약, 또는 폴백이 필요하면 None
+    """
+    if not text:
+        return None
+
+    # 1) 리터럴 \n, \r, \t → 실제 문자
+    text = text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", " ")
+
+    # 2) 머리말 제거 (여러 번 적용 — 영어+한국어 중첩 대비)
+    for _ in range(3):
+        before = text
+        for pat in _SUMMARY_PREFIX_PATTERNS:
+            text = pat.sub("", text, count=1)
+        text = text.strip()
+        if text == before:
+            break
+
+    # 3) 줄 단위 정리: 마크다운/번호/불릿 제거 + 빈 줄 제외
+    cleaned_lines = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        # 선행 번호(1. 1) -)·불릿(-, *, •)·마크다운(**) 제거
+        line = re.sub(r"^\s*([0-9]+[.)]|[-*•])\s*", "", line)
+        line = line.replace("**", "").replace("##", "").strip()
+        if line:
+            cleaned_lines.append(line)
+
+    result = "\n".join(cleaned_lines).strip()
+    if not result:
+        return None
+
+    # 5) 한국어(가-힣)가 전혀 없으면 영어 응답으로 간주 → 폴백
+    if not re.search(r"[가-힣]", result):
+        return None
+
+    return result

@@ -404,7 +404,7 @@ async def _process_single_article(raw: dict) -> bool:
     # ── 기자명 / 언론사 추출 ──
     # 언론사는 credibility v2 의 RB-04 3-tier 계산(기자+언론사 조합)에
     # 사용되므로 LLM 호출 전에 미리 뽑아둔다.
-    journalist = _extract_journalist(body)
+    journalist = _extract_journalist(body, extra=raw.get("description"))
     press = _extract_press(url)
 
     # ── LLM 처리: CT-01(Llama 요약) → CT-02(GPT 분류) 순차 호출 ──
@@ -498,16 +498,97 @@ async def _process_single_article(raw: dict) -> bool:
     return True
 
 
-def _extract_journalist(body: str) -> str | None:
+# 기자명 오매칭 방지: 이름이 아닌 일반 명사 + '기자' 조합
+_JOURNALIST_FALSE_POSITIVES = frozenset({
+    "기자회견", "기자단", "기자실", "기자협회", "기자상", "현장기자",
+    "취재기자", "사진기자", "영상기자", "담당기자", "본지기자",
+})
+# 기자명으로 부적절한 한 글자/접미 조합(직책·일반어)
+_JOURNALIST_STOPWORDS = frozenset({
+    "이번", "지난", "관련", "당시", "현장", "취재", "사진", "영상", "담당", "본지",
+    "해당", "특별", "객원", "선임", "수습",
+})
+
+
+def _extract_journalist(body: str, extra: str | None = None) -> str | None:
     """
-    기사 본문에서 기자명을 추출한다.
-    한국 뉴스 관례: 본문 끝에 '홍길동 기자' 패턴이 있음.
+    기사에서 기자명을 추출한다 (다단계 시도, 첫 유효 매칭 채택).
+
+    한국 뉴스는 매체마다 바이라인 위치·표기가 달라 단일 패턴으로는 누락이 잦다.
+    본문 끝/앞 + 이메일 근접 + 역순 어순 + (보조) description 까지 순차 검사한다.
+
+    Args:
+        body:  기사 본문
+        extra: 보조 텍스트 (네이버 API description 등). 본문 추출 실패 시 검사.
+
+    Returns:
+        기자 실명(2~4글자 한글) 또는 추출 실패 시 None
     """
     import re
-    # '이름 기자' 패턴 (2~4글자 한글 이름 + 기자/특파원)
-    match = re.search(r"([가-힣]{2,4})\s*(기자|특파원|통신원)", body[-200:])
-    if match:
-        return match.group(1)
+
+    # '이름 + 기자/특파원/논설위원' (정방향), 직책 표기 다양화.
+    # (?!회견|단|실|...) negative lookahead 로 '기자회견/기자단' 등 오매칭 차단.
+    # 이름 뒤 '기자'는 단어 경계(공백·문장부호·끝)여야 함.
+    forward = re.compile(
+        r"([가-힣]{2,4})\s*(?:기자|특파원|통신원|논설위원)"
+        r"(?!회견|단|실|협회|상|회|증|클럽|단실)"
+        r"(?=\s|$|[.,·\)\]】」』]|$)"
+    )
+    # '기자 + 이름' (역순 표기 일부 매체) — '기자회견' 등은 lookahead 로 배제
+    backward = re.compile(r"기자(?!회견|단|실|협회|상|회|증|클럽)\s+([가-힣]{2,4})")
+
+    def _valid(name: str | None) -> str | None:
+        if not name:
+            return None
+        if name in _JOURNALIST_STOPWORDS:
+            return None
+        return name
+
+    # 검사 구간: 본문 끝 250자 → 본문 앞 300자 → 이메일 근접 → 역순 → 보조 텍스트
+    tail = body[-250:] if body else ""
+    head = body[:300] if body else ""
+
+    # 1) 본문 끝 (가장 흔한 바이라인 위치) — 오매칭 단어 우선 배제
+    for m in forward.finditer(tail):
+        if m.group(0).strip() in _JOURNALIST_FALSE_POSITIVES:
+            continue
+        name = _valid(m.group(1))
+        if name:
+            return name
+
+    # 2) 이메일 근처: "홍길동 기자 ... abc@press.co.kr" — 이메일 앞 40자에서 이름
+    if body:
+        for em in re.finditer(r"[\w.\-+]+@[\w.\-]+\.[a-zA-Z]{2,}", body):
+            window = body[max(0, em.start() - 40):em.start()]
+            m = forward.search(window)
+            if m and m.group(0).strip() not in _JOURNALIST_FALSE_POSITIVES:
+                name = _valid(m.group(1))
+                if name:
+                    return name
+
+    # 3) 본문 앞부분 (상단 바이라인 매체)
+    for m in forward.finditer(head):
+        if m.group(0).strip() in _JOURNALIST_FALSE_POSITIVES:
+            continue
+        name = _valid(m.group(1))
+        if name:
+            return name
+
+    # 4) 역순 어순 "기자 홍길동"
+    m = backward.search(tail) or backward.search(head)
+    if m:
+        name = _valid(m.group(1))
+        if name:
+            return name
+
+    # 5) 보조 텍스트(description) 검사
+    if extra:
+        m = forward.search(extra)
+        if m and m.group(0).strip() not in _JOURNALIST_FALSE_POSITIVES:
+            name = _valid(m.group(1))
+            if name:
+                return name
+
     return None
 
 
